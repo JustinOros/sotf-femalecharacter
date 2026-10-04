@@ -11,7 +11,7 @@ public static class FemaleCharacterBundleBuilder
     private const string MeshDir = "Assets/Meshes";
     private const string OutDir = "Bundles";
     private const string BundleName = "femalecharacter";
-    private const float WristFraction = 0.35f;
+    private static readonly Dictionary<string, float> WristFractions = new();
 
     [MenuItem("FemaleCharacter/Build Bundle")]
     public static void Build()
@@ -47,8 +47,8 @@ public static class FemaleCharacterBundleBuilder
 
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
 
-            SavePrefab(model, name, false);
-            SavePrefab(model, $"{name}_head", true);
+            SavePrefab(model, name, false, 0f);
+            SavePrefab(model, $"{name}_head", true, WristFractions.TryGetValue(name, out var wf) ? wf : 0f);
         }
 
         AssetDatabase.SaveAssets();
@@ -60,7 +60,7 @@ public static class FemaleCharacterBundleBuilder
             EditorUtility.RevealInFinder(output);
     }
 
-    private static void SavePrefab(GameObject model, string prefabName, bool headOnly)
+    private static void SavePrefab(GameObject model, string prefabName, bool headOnly, float wristFraction)
     {
         var instance = (GameObject)PrefabUtility.InstantiatePrefab(model);
         PrefabUtility.UnpackPrefabInstance(instance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
@@ -72,7 +72,7 @@ public static class FemaleCharacterBundleBuilder
         {
             foreach (var smr in instance.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
-                var mesh = HeadMesh(smr);
+                var mesh = HeadMesh(smr, wristFraction);
                 if (mesh == null)
                 {
                     Object.DestroyImmediate(smr.gameObject);
@@ -92,7 +92,7 @@ public static class FemaleCharacterBundleBuilder
         Debug.Log($"Prepared {prefabPath}");
     }
 
-    private static Mesh HeadMesh(SkinnedMeshRenderer smr)
+    private static Mesh HeadMesh(SkinnedMeshRenderer smr, float wristFraction)
     {
         var src = smr.sharedMesh;
         var bones = smr.bones;
@@ -114,7 +114,7 @@ public static class FemaleCharacterBundleBuilder
         for (int i = 0; i < bones.Length; i++)
         {
             wristIndex[i] = -1;
-            if (bones[i] == null || !StripPrefix(bones[i].name).Contains("ForeArm") || i >= binds.Length)
+            if (wristFraction <= 0f || bones[i] == null || !StripPrefix(bones[i].name).Contains("ForeArm") || i >= binds.Length)
                 continue;
             var handName = StripPrefix(bones[i].name).Replace("ForeArm", "Hand");
             for (int j = 0; j < bones.Length; j++)
@@ -124,7 +124,7 @@ public static class FemaleCharacterBundleBuilder
                     wristIndex[i] = j;
                     var elbow = binds[i].inverse.GetColumn(3);
                     var wrist = binds[j].inverse.GetColumn(3);
-                    wristReach[i] = Vector3.Distance(elbow, wrist) * WristFraction;
+                    wristReach[i] = Vector3.Distance(elbow, wrist) * wristFraction;
                     break;
                 }
             }
