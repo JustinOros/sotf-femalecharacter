@@ -399,6 +399,21 @@ public class FemaleCharacter : SonsMod
                 if (fBones.TryGetValue(name, out var f) && pBones.TryGetValue(name, out var p))
                     entry.Snap.Add(new Link { Female = f, Player = p });
             }
+            foreach (var side in new[] { "Left", "Right" })
+            {
+                if (fBones.TryGetValue($"{side}ForeArm", out var fa) && fBones.TryGetValue($"{side}Hand", out var fh)
+                    && pBones.TryGetValue($"{side}ForeArm", out var pa) && pBones.TryGetValue($"{side}Hand", out var ph))
+                {
+                    var fLen = Vector3.Distance(fa.position, fh.position);
+                    var pLen = Vector3.Distance(pa.position, ph.position);
+                    if (fLen > 0.01f && pLen > 0.01f)
+                    {
+                        var ratio = Mathf.Clamp(pLen / fLen, 0.5f, 2f);
+                        fa.localScale = fa.localScale * ratio;
+                        RLog.Msg($"FemaleCharacter: {prefabName} {side} forearm {fLen:F3} player {pLen:F3} ratio {ratio:F3}");
+                    }
+                }
+            }
         }
 
         var layer = LayerMask.NameToLayer("Player");
