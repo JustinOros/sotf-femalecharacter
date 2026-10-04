@@ -394,7 +394,7 @@ public class FemaleCharacter : SonsMod
 
         if (gameClothes)
         {
-            foreach (var name in new[] { "Neck", "LeftHand", "RightHand" })
+            foreach (var name in new[] { "Neck", "LeftForeArm", "RightForeArm" })
             {
                 if (fBones.TryGetValue(name, out var f) && pBones.TryGetValue(name, out var p))
                     entry.Snap.Add(new Link { Female = f, Player = p });

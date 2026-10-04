@@ -152,7 +152,7 @@ public static class FemaleCharacterBundleBuilder
         var i = boneName.LastIndexOf(':');
         var n = i >= 0 ? boneName.Substring(i + 1) : boneName;
         var lower = n.ToLowerInvariant();
-        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.StartsWith("Bow") || n.Contains("Hand");
+        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.StartsWith("Bow") || n.Contains("Hand") || n.Contains("ForeArm");
     }
 
     private static string Sanitize(string s)
