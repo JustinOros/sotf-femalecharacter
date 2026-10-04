@@ -191,7 +191,7 @@ public static class FemaleCharacterBundleBuilder
     {
         var n = StripPrefix(boneName);
         var lower = n.ToLowerInvariant();
-        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.StartsWith("Bow") || n.Contains("Hand");
+        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.Contains("Hand");
     }
 
     private static string Sanitize(string s)
