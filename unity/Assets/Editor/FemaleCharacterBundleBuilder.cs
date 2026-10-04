@@ -11,6 +11,7 @@ public static class FemaleCharacterBundleBuilder
     private const string MeshDir = "Assets/Meshes";
     private const string OutDir = "Bundles";
     private const string BundleName = "femalecharacter";
+    private const float WristFraction = 0.35f;
 
     [MenuItem("FemaleCharacter/Build Bundle")]
     public static void Build()
@@ -106,6 +107,29 @@ public static class FemaleCharacterBundleBuilder
         if (weights == null || weights.Length != src.vertexCount)
             return null;
 
+        var binds = src.bindposes;
+        var vertices = src.vertices;
+        var wristIndex = new int[bones.Length];
+        var wristReach = new float[bones.Length];
+        for (int i = 0; i < bones.Length; i++)
+        {
+            wristIndex[i] = -1;
+            if (bones[i] == null || !StripPrefix(bones[i].name).Contains("ForeArm") || i >= binds.Length)
+                continue;
+            var handName = StripPrefix(bones[i].name).Replace("ForeArm", "Hand");
+            for (int j = 0; j < bones.Length; j++)
+            {
+                if (bones[j] != null && j < binds.Length && StripPrefix(bones[j].name) == handName)
+                {
+                    wristIndex[i] = j;
+                    var elbow = binds[i].inverse.GetColumn(3);
+                    var wrist = binds[j].inverse.GetColumn(3);
+                    wristReach[i] = Vector3.Distance(elbow, wrist) * WristFraction;
+                    break;
+                }
+            }
+        }
+
         var keepVertex = new bool[weights.Length];
         for (int v = 0; v < weights.Length; v++)
         {
@@ -115,7 +139,17 @@ public static class FemaleCharacterBundleBuilder
             if (w.weight1 > bestW) { best = w.boneIndex1; bestW = w.weight1; }
             if (w.weight2 > bestW) { best = w.boneIndex2; bestW = w.weight2; }
             if (w.weight3 > bestW) { best = w.boneIndex3; }
-            keepVertex[v] = best >= 0 && best < keepBone.Length && keepBone[best];
+            if (best < 0 || best >= keepBone.Length)
+                continue;
+            if (keepBone[best])
+            {
+                keepVertex[v] = true;
+            }
+            else if (wristIndex[best] >= 0)
+            {
+                var wrist = (Vector3)binds[wristIndex[best]].inverse.GetColumn(3);
+                keepVertex[v] = Vector3.Distance(vertices[v], wrist) <= wristReach[best];
+            }
         }
 
         var mesh = Object.Instantiate(src);
@@ -147,12 +181,17 @@ public static class FemaleCharacterBundleBuilder
         return mesh;
     }
 
-    private static bool KeepBone(string boneName)
+    private static string StripPrefix(string boneName)
     {
         var i = boneName.LastIndexOf(':');
-        var n = i >= 0 ? boneName.Substring(i + 1) : boneName;
+        return i >= 0 ? boneName.Substring(i + 1) : boneName;
+    }
+
+    private static bool KeepBone(string boneName)
+    {
+        var n = StripPrefix(boneName);
         var lower = n.ToLowerInvariant();
-        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.StartsWith("Bow") || n.Contains("Hand") || n.Contains("ForeArm");
+        return n == "Neck" || n == "Head" || n == "HeadTop_End" || lower.EndsWith("eye") || n.StartsWith("Bow") || n.Contains("Hand");
     }
 
     private static string Sanitize(string s)
