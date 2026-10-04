@@ -48,6 +48,9 @@ public class FemaleCharacter : SonsMod
     private static bool _gameClothes;
     private static bool _settingsLoaded;
     private static readonly Dictionary<string, float> HandOffsets = new() { { "alyssa", 0.02f }, { "rachel", 0.05f } };
+    private static readonly Dictionary<string, float> HeadOffsets = new() { { "alyssa", 0f }, { "rachel", 0f } };
+    private static readonly Dictionary<string, float> OutfitHand = new();
+    private static readonly Dictionary<string, float> OutfitHead = new();
 
     public FemaleCharacter()
     {
@@ -67,7 +70,7 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|outfithand <piece> <meters>|outfithead <piece> <meters>|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -95,16 +98,38 @@ public class FemaleCharacter : SonsMod
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
                 return;
             }
-            if (parts.Length >= 1 && parts[0] == "handoffset")
+            if (parts.Length >= 1 && parts[0] == "outfit")
             {
-                if (parts.Length < 3 || !HandOffsets.ContainsKey(parts[1]) || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var meters))
+                var names = LocalOutfit();
+                Say(names.Count > 0 ? $"FemaleCharacter outfit pieces: {string.Join(", ", names.Select(n => $"{n} (hand {Get(OutfitHand, n):F3}, head {Get(OutfitHead, n):F3})"))}" : "FemaleCharacter: no clothing pieces found");
+                return;
+            }
+            if (parts.Length >= 1 && (parts[0] == "outfithand" || parts[0] == "outfithead"))
+            {
+                var table = parts[0] == "outfithand" ? OutfitHand : OutfitHead;
+                if (parts.Length < 3 || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var meters))
                 {
-                    Say($"FemaleCharacter hand offsets: {string.Join(", ", HandOffsets.Select(kv => $"{kv.Key} {kv.Value:F3}"))}. Use femalecharacter handoffset rachel 0.05");
+                    Say($"Use femalecharacter {parts[0]} <piece> <meters>, piece names come from femalecharacter outfit");
                     return;
                 }
-                HandOffsets[parts[1]] = Mathf.Clamp(meters, -0.2f, 0.2f);
+                table[parts[1]] = Mathf.Clamp(meters, -0.2f, 0.2f);
                 SaveSettings();
-                Say($"FemaleCharacter: {parts[1]} hand offset {HandOffsets[parts[1]]:F3} m");
+                RefreshOutfits();
+                Say($"FemaleCharacter: {parts[1]} {(parts[0] == "outfithand" ? "hand" : "head")} adjust {table[parts[1]]:F3} m");
+                return;
+            }
+            if (parts.Length >= 1 && (parts[0] == "handoffset" || parts[0] == "headoffset"))
+            {
+                var table = parts[0] == "handoffset" ? HandOffsets : HeadOffsets;
+                var label = parts[0] == "handoffset" ? "hand" : "head";
+                if (parts.Length < 3 || !table.ContainsKey(parts[1]) || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var meters))
+                {
+                    Say($"FemaleCharacter {label} offsets: {string.Join(", ", table.Select(kv => $"{kv.Key} {kv.Value:F3}"))}. Use femalecharacter {parts[0]} rachel 0.03");
+                    return;
+                }
+                table[parts[1]] = Mathf.Clamp(meters, -0.2f, 0.2f);
+                SaveSettings();
+                Say($"FemaleCharacter: {parts[1]} {label} offset {table[parts[1]]:F3} m");
                 return;
             }
             Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} clothes={(_gameClothes ? "game" : "own")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
@@ -138,6 +163,12 @@ public class FemaleCharacter : SonsMod
                     _gameClothes = value == "game";
                 else if (key.StartsWith("handoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f))
                     HandOffsets[key.Substring("handoffset.".Length)] = f;
+                else if (key.StartsWith("headoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
+                    HeadOffsets[key.Substring("headoffset.".Length)] = h;
+                else if (key.StartsWith("outfithand.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var oh))
+                    OutfitHand[key.Substring("outfithand.".Length)] = oh;
+                else if (key.StartsWith("outfithead.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var od))
+                    OutfitHead[key.Substring("outfithead.".Length)] = od;
             }
         }
         catch (Exception e)
@@ -153,12 +184,63 @@ public class FemaleCharacter : SonsMod
             var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+            foreach (var kv in HeadOffsets)
+                lines.Add($"headoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+            foreach (var kv in OutfitHand)
+                lines.Add($"outfithand.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+            foreach (var kv in OutfitHead)
+                lines.Add($"outfithead.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             File.WriteAllLines(SettingsPath, lines);
         }
         catch (Exception e)
         {
             RLog.Warning($"FemaleCharacter: could not save settings: {e.Message}");
         }
+    }
+
+    private static float Get(Dictionary<string, float> table, string key)
+    {
+        return table.TryGetValue(key, out var v) ? v : 0f;
+    }
+
+    private static List<string> OutfitNames(Transform frame)
+    {
+        var names = new List<string>();
+        var clothing = frame ? frame.Find("ClothingSystem") : null;
+        if (!clothing)
+            return names;
+        foreach (var r in clothing.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            if (!r || !r.gameObject.activeInHierarchy)
+                continue;
+            var n = r.gameObject.name.ToLowerInvariant();
+            if (!names.Contains(n))
+                names.Add(n);
+        }
+        return names;
+    }
+
+    private static List<string> LocalOutfit()
+    {
+        var race = LocalPlayer.RaceSystem;
+        if (!race)
+            return new List<string>();
+        return OutfitNames(race.transform.parent ? race.transform.parent : race.transform);
+    }
+
+    private static void UpdateOutfit(Entry entry)
+    {
+        var names = OutfitNames(entry.Frame);
+        entry.HandAdjust = names.Sum(n => Get(OutfitHand, n));
+        entry.HeadAdjust = names.Sum(n => Get(OutfitHead, n));
+    }
+
+    private static void RefreshOutfits()
+    {
+        foreach (var entry in Entries.Values)
+            UpdateOutfit(entry);
+        if (_preview != null)
+            UpdateOutfit(_preview);
     }
 
     private static void RebuildAll()
@@ -280,6 +362,7 @@ public class FemaleCharacter : SonsMod
         if (!EnsureReady())
             return;
 
+        RefreshOutfits();
         var seen = new HashSet<int>();
         foreach (var race in UnityEngine.Object.FindObjectsOfType<PlayerRaceSystem>())
         {
@@ -430,6 +513,8 @@ public class FemaleCharacter : SonsMod
                 var link = new Link { Female = f, Player = p };
                 if (name.EndsWith("Hand") && pBones.TryGetValue(name.Replace("Hand", "ForeArm"), out var up))
                     link.Up = up;
+                if (name == "Neck" && pBones.TryGetValue("Spine2", out var down))
+                    link.Up = down;
                 entry.Snap.Add(link);
             }
         }
@@ -461,6 +546,7 @@ public class FemaleCharacter : SonsMod
             }
         }
 
+        UpdateOutfit(entry);
         return entry;
     }
 
@@ -602,17 +688,19 @@ public class FemaleCharacter : SonsMod
                 link.Female.rotation = link.Player.rotation * link.Offset;
         }
 
-        HandOffsets.TryGetValue(entry.Model, out var handOffset);
+        var handOffset = Get(HandOffsets, entry.Model) + entry.HandAdjust;
+        var headOffset = Get(HeadOffsets, entry.Model) + entry.HeadAdjust;
         foreach (var link in entry.Snap)
         {
             if (!link.Female || !link.Player)
                 continue;
             var target = link.Player.position;
-            if (link.Up && handOffset != 0f)
+            var offset = link.Female.name.EndsWith("Neck") ? headOffset : handOffset;
+            if (link.Up && offset != 0f)
             {
                 var dir = link.Up.position - link.Player.position;
                 if (dir.sqrMagnitude > 1e-6f)
-                    target += dir.normalized * handOffset;
+                    target += dir.normalized * offset;
             }
             link.Female.position = target;
         }
@@ -970,6 +1058,8 @@ public class FemaleCharacter : SonsMod
     {
         public string Model;
         public bool GameClothes;
+        public float HandAdjust;
+        public float HeadAdjust;
         public Mannequin Mannequin;
         public readonly List<Link> Snap = new();
         public PlayerRaceSystem Race;

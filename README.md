@@ -23,6 +23,10 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 | `femalecharacter clothes own` | Women wear their own outfit (default) |
 | `femalecharacter clothes game` | Women wear the game clothing you have equipped |
 | `femalecharacter handoffset rachel 0.05` | In game clothes mode, raise a character's hands into the sleeves by this many meters (defaults: alyssa 0.02, rachel 0.05) |
+| `femalecharacter headoffset rachel 0.03` | In game clothes mode, lower a character's head and neck into the collar by this many meters (default 0) |
+| `femalecharacter outfit` | List the clothing pieces you are wearing and their adjustments |
+| `femalecharacter outfithand flightattendantuniform 0.02` | Extra hand offset added when that clothing piece is worn, for both women |
+| `femalecharacter outfithead flightattendantuniform 0.03` | Extra head offset added when that clothing piece is worn, for both women |
 | `femalecharacter preview alyssa` | Show Alyssa in front of you copying your movement, for testing without another player |
 | `femalecharacter preview rachel` | Same for Rachel |
 | `femalecharacter preview off` | Remove the preview |
