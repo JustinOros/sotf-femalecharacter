@@ -12,13 +12,16 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 ## Limitations
 
 - Your own view is unchanged. Others see you as female, you still see the normal first person arms.
-- Game clothing is hidden on the women. They always wear their own outfit.
+- With `clothes own` (the default) game clothing is hidden and the women wear their own outfit.
+- With `clothes game` only their head, hair and hands are shown on top of the normal game clothing, so every outfit you find in game works. The game clothes are cut for the male body.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `femalecharacter` | Show status |
+| `femalecharacter clothes own` | Women wear their own outfit (default) |
+| `femalecharacter clothes game` | Women wear the game clothing you have equipped |
 | `femalecharacter preview alyssa` | Show Alyssa in front of you copying your movement, for testing without another player |
 | `femalecharacter preview rachel` | Same for Rachel |
 | `femalecharacter preview off` | Remove the preview |

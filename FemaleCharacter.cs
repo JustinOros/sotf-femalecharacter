@@ -45,6 +45,8 @@ public class FemaleCharacter : SonsMod
     private static Entry _preview;
     private static float _nextScan;
     private static UnityAction _beforeRender;
+    private static bool _gameClothes;
+    private static bool _settingsLoaded;
 
     public FemaleCharacter()
     {
@@ -63,7 +65,8 @@ public class FemaleCharacter : SonsMod
         {
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
-        RLog.Msg("FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Command: femalecharacter [status|preview alyssa|preview rachel|preview off]");
+        LoadSettings();
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -78,12 +81,72 @@ public class FemaleCharacter : SonsMod
                 SetPreview(model);
                 return;
             }
-            Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
+            if (parts.Length >= 1 && parts[0] == "clothes")
+            {
+                if (parts.Length < 2 || (parts[1] != "own" && parts[1] != "game"))
+                {
+                    Say($"FemaleCharacter clothes: {(_gameClothes ? "game" : "own")}. Use femalecharacter clothes own or femalecharacter clothes game");
+                    return;
+                }
+                _gameClothes = parts[1] == "game";
+                SaveSettings();
+                RebuildAll();
+                Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
+                return;
+            }
+            Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} clothes={(_gameClothes ? "game" : "own")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
         }
         catch (Exception e)
         {
             RLog.Error($"femalecharacter command failed: {e}");
         }
+    }
+
+    private static string SettingsPath => Path.Combine(LoaderEnvironment.UserDataDirectory, "FemaleCharacter.cfg");
+
+    private static void LoadSettings()
+    {
+        if (_settingsLoaded)
+            return;
+        _settingsLoaded = true;
+        try
+        {
+            if (File.Exists(SettingsPath))
+                _gameClothes = File.ReadAllText(SettingsPath).Contains("clothes=game");
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not read settings: {e.Message}");
+        }
+    }
+
+    private static void SaveSettings()
+    {
+        try
+        {
+            File.WriteAllText(SettingsPath, $"clothes={(_gameClothes ? "game" : "own")}");
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not save settings: {e.Message}");
+        }
+    }
+
+    private static void RebuildAll()
+    {
+        foreach (var entry in Entries.Values)
+            Remove(entry);
+        Entries.Clear();
+        string previewModel = null;
+        if (_preview != null)
+        {
+            previewModel = _preview.Model;
+            Remove(_preview);
+            _preview = null;
+        }
+        _nextScan = 0f;
+        if (previewModel != null)
+            SetPreview(previewModel);
     }
 
     private static List<string[]> BuildChains()
@@ -143,9 +206,9 @@ public class FemaleCharacter : SonsMod
         try
         {
             foreach (var entry in Entries.Values)
-                Drive(entry, false);
+                Drive(entry);
             if (_preview != null)
-                Drive(_preview, true);
+                Drive(_preview);
         }
         catch (Exception e)
         {
@@ -210,7 +273,7 @@ public class FemaleCharacter : SonsMod
 
             if (Entries.TryGetValue(id, out var existing))
             {
-                if (existing.Model == model && existing.Female)
+                if (existing.Model == model && existing.Female && existing.GameClothes == _gameClothes)
                 {
                     seen.Add(id);
                     continue;
@@ -222,7 +285,7 @@ public class FemaleCharacter : SonsMod
             if (model == null)
                 continue;
 
-            var entry = Create(race, model);
+            var entry = Create(race, model, false);
             if (entry == null)
                 continue;
             Entries[id] = entry;
@@ -254,13 +317,15 @@ public class FemaleCharacter : SonsMod
             Say("FemaleCharacter: not ready, check the log");
             return;
         }
-        _preview = Create(LocalPlayer.RaceSystem, model, false);
+        _preview = Create(LocalPlayer.RaceSystem, model, true);
         Say(_preview != null ? $"FemaleCharacter preview: {model}" : $"FemaleCharacter: could not create {model}");
     }
 
-    private static Entry Create(PlayerRaceSystem race, string model, bool hideMale = true)
+    private static Entry Create(PlayerRaceSystem race, string model, bool preview)
     {
-        var prefab = GetPrefab(model);
+        var gameClothes = _gameClothes;
+        var prefabName = gameClothes ? $"{model}_head" : model;
+        var prefab = GetPrefab(prefabName);
         if (!prefab)
             return null;
 
@@ -273,17 +338,27 @@ public class FemaleCharacter : SonsMod
             return null;
         }
 
-        var pBones = new Dictionary<string, Transform>();
-        foreach (var t in hips.GetComponentsInChildren<Transform>(true))
-            if (!pBones.ContainsKey(t.name))
-                pBones[t.name] = t;
+        Mannequin mannequin = null;
+        Dictionary<string, Transform> pBones;
+        if (preview)
+        {
+            mannequin = BuildMannequin(frame, root, hips, gameClothes);
+            pBones = mannequin.Bones;
+        }
+        else
+        {
+            pBones = new Dictionary<string, Transform>();
+            foreach (var t in hips.GetComponentsInChildren<Transform>(true))
+                pBones.TryAdd(t.name, t);
+        }
 
         var female = UnityEngine.Object.Instantiate(prefab);
-        female.name = $"FemaleCharacter_{model}";
-        var rig = GetRig(model, female);
+        female.name = $"FemaleCharacter_{prefabName}";
+        var rig = GetRig(prefabName, female);
         if (rig == null)
         {
             UnityEngine.Object.Destroy(female);
+            DestroyMannequin(mannequin);
             return null;
         }
         female.transform.localScale = Vector3.one;
@@ -292,8 +367,9 @@ public class FemaleCharacter : SonsMod
         var pLeg = LiveLegLength(pBones);
         var scale = fLeg > 0.01f && pLeg > 0.01f ? pLeg / fLeg : 1f;
         female.transform.localScale = Vector3.one * scale;
-        RLog.Msg($"FemaleCharacter: {model} leg {fLeg:F3} player leg {pLeg:F3} scale {scale:F3}");
-        var entry = new Entry { Model = model, Race = race, Frame = frame, Female = female };
+        RLog.Msg($"FemaleCharacter: {prefabName} leg {fLeg:F3} player leg {pLeg:F3} scale {scale:F3}");
+
+        var entry = new Entry { Model = model, GameClothes = gameClothes, Race = race, Frame = frame, Female = female, Mannequin = mannequin };
         foreach (var name in DriveOrder)
         {
             if (name.Contains("Hand"))
@@ -312,7 +388,17 @@ public class FemaleCharacter : SonsMod
         if (!entry.FemaleHips)
         {
             UnityEngine.Object.Destroy(female);
+            DestroyMannequin(mannequin);
             return null;
+        }
+
+        if (gameClothes)
+        {
+            foreach (var name in new[] { "Neck", "LeftHand", "RightHand" })
+            {
+                if (fBones.TryGetValue(name, out var f) && pBones.TryGetValue(name, out var p))
+                    entry.Snap.Add(new Link { Female = f, Player = p });
+            }
         }
 
         var layer = LayerMask.NameToLayer("Player");
@@ -326,11 +412,11 @@ public class FemaleCharacter : SonsMod
                 smr.updateWhenOffscreen = true;
         }
 
-        if (hideMale)
+        if (!preview)
         {
             var targets = new List<Transform> { race.transform };
             var clothing = frame.Find("ClothingSystem");
-            if (clothing)
+            if (clothing && !gameClothes)
                 targets.Add(clothing);
             foreach (var t in targets)
             {
@@ -345,6 +431,96 @@ public class FemaleCharacter : SonsMod
         return entry;
     }
 
+    private static Mannequin BuildMannequin(Transform frame, Transform srcRoot, Transform srcHips, bool withClothes)
+    {
+        var m = new Mannequin
+        {
+            Root = new GameObject("FemaleCharacter_Mannequin"),
+            SrcFrame = frame,
+            SrcRoot = srcRoot,
+            SrcHips = srcHips
+        };
+        m.Hips = CloneBone(srcHips, m.Root.transform, m);
+
+        if (withClothes)
+        {
+            var layer = LayerMask.NameToLayer("Player");
+            var clothing = frame.Find("ClothingSystem");
+            if (clothing)
+            {
+                foreach (var src in clothing.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if (!src || !src.enabled || !src.gameObject.activeInHierarchy || !src.sharedMesh)
+                        continue;
+                    var bones = src.bones;
+                    if (bones == null)
+                        continue;
+                    var mapped = new Transform[bones.Length];
+                    for (int i = 0; i < bones.Length; i++)
+                        mapped[i] = bones[i] && m.Bones.TryGetValue(bones[i].name, out var b) ? b : m.Hips;
+                    var go = new GameObject($"FemaleCharacter_{src.name}");
+                    go.transform.SetParent(m.Root.transform, false);
+                    if (layer >= 0)
+                        go.layer = layer;
+                    var smr = go.AddComponent<SkinnedMeshRenderer>();
+                    smr.sharedMesh = src.sharedMesh;
+                    smr.sharedMaterials = src.sharedMaterials;
+                    smr.bones = mapped;
+                    smr.rootBone = src.rootBone && m.Bones.TryGetValue(src.rootBone.name, out var rb) ? rb : m.Hips;
+                    smr.updateWhenOffscreen = true;
+                }
+            }
+        }
+        return m;
+    }
+
+    private static Transform CloneBone(Transform src, Transform parent, Mannequin m)
+    {
+        var go = new GameObject(src.name);
+        var t = go.transform;
+        t.SetParent(parent, false);
+        t.localPosition = src.localPosition;
+        t.localRotation = src.localRotation;
+        t.localScale = src.localScale;
+        m.Pairs.Add(new Link { Player = src, Female = t });
+        m.Bones.TryAdd(src.name, t);
+        for (int i = 0; i < src.childCount; i++)
+            CloneBone(src.GetChild(i), t, m);
+        return t;
+    }
+
+    private static void UpdateMannequin(Mannequin m)
+    {
+        if (!m.SrcRoot || !m.SrcHips)
+            return;
+        foreach (var pair in m.Pairs)
+        {
+            if (!pair.Player || !pair.Female)
+                continue;
+            pair.Female.localPosition = pair.Player.localPosition;
+            pair.Female.localRotation = pair.Player.localRotation;
+            pair.Female.localScale = pair.Player.localScale;
+        }
+
+        var root = m.Root.transform;
+        var yaw = Quaternion.AngleAxis(180f, Vector3.up);
+        root.rotation = yaw * m.SrcRoot.rotation;
+        root.localScale = m.SrcRoot.lossyScale;
+        root.position = m.SrcRoot.position;
+
+        var forward = Vector3.ProjectOnPlane(m.SrcFrame.forward, Vector3.up);
+        if (forward.sqrMagnitude < 1e-6f)
+            forward = Vector3.forward;
+        var desired = m.SrcHips.position + forward.normalized * 2.5f;
+        root.position += desired - m.Hips.position;
+    }
+
+    private static void DestroyMannequin(Mannequin m)
+    {
+        if (m != null && m.Root)
+            UnityEngine.Object.Destroy(m.Root);
+    }
+
     private static void Remove(Entry entry)
     {
         for (int i = 0; i < entry.Hidden.Count; i++)
@@ -356,9 +532,11 @@ public class FemaleCharacter : SonsMod
         if (entry.Female)
             UnityEngine.Object.Destroy(entry.Female);
         entry.Female = null;
+        DestroyMannequin(entry.Mannequin);
+        entry.Mannequin = null;
     }
 
-    private static void Drive(Entry entry, bool preview)
+    private static void Drive(Entry entry)
     {
         if (!entry.Female || !entry.Race || !entry.PlayerHips)
             return;
@@ -366,6 +544,8 @@ public class FemaleCharacter : SonsMod
         var active = entry.Race.gameObject.activeInHierarchy;
         if (entry.Female.activeSelf != active)
             entry.Female.SetActive(active);
+        if (entry.Mannequin != null && entry.Mannequin.Root && entry.Mannequin.Root.activeSelf != active)
+            entry.Mannequin.Root.SetActive(active);
         if (!active)
             return;
 
@@ -373,27 +553,26 @@ public class FemaleCharacter : SonsMod
             if (r && r.enabled)
                 r.enabled = false;
 
-        var frame = entry.Frame;
-        var yaw = preview ? Quaternion.AngleAxis(180f, frame.up) : Quaternion.identity;
-        var fRoot = entry.Female.transform;
-        fRoot.rotation = yaw * frame.rotation;
+        var frameRotation = entry.Frame.rotation;
+        if (entry.Mannequin != null)
+        {
+            UpdateMannequin(entry.Mannequin);
+            frameRotation = entry.Mannequin.Root.transform.rotation * Quaternion.Inverse(entry.Mannequin.SrcRoot.rotation) * entry.Frame.rotation;
+        }
 
-        if (preview)
-        {
-            var forward = Vector3.ProjectOnPlane(frame.forward, Vector3.up);
-            if (forward.sqrMagnitude < 1e-6f)
-                forward = Vector3.forward;
-            entry.FemaleHips.position = entry.PlayerHips.position + forward.normalized * 2.5f;
-        }
-        else
-        {
-            entry.FemaleHips.position = entry.PlayerHips.position;
-        }
+        entry.Female.transform.rotation = frameRotation;
+        entry.FemaleHips.position = entry.PlayerHips.position;
 
         foreach (var link in entry.Drive)
         {
             if (link.Female && link.Player)
-                link.Female.rotation = yaw * link.Player.rotation * link.Offset;
+                link.Female.rotation = link.Player.rotation * link.Offset;
+        }
+
+        foreach (var link in entry.Snap)
+        {
+            if (link.Female && link.Player)
+                link.Female.position = link.Player.position;
         }
     }
 
@@ -733,9 +912,23 @@ public class FemaleCharacter : SonsMod
         public Quaternion Offset;
     }
 
+    private sealed class Mannequin
+    {
+        public GameObject Root;
+        public Transform SrcFrame;
+        public Transform SrcRoot;
+        public Transform SrcHips;
+        public Transform Hips;
+        public readonly List<Link> Pairs = new();
+        public readonly Dictionary<string, Transform> Bones = new();
+    }
+
     private sealed class Entry
     {
         public string Model;
+        public bool GameClothes;
+        public Mannequin Mannequin;
+        public readonly List<Link> Snap = new();
         public PlayerRaceSystem Race;
         public Transform Frame;
         public GameObject Female;
