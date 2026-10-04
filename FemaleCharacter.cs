@@ -9,8 +9,11 @@ using Sons.Wearable.Race;
 using SonsSdk;
 using SonsSdk.Attributes;
 using TheForest.Utils;
+using Endnight.Animation;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 using UnityEngine.Events;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.Rendering;
 
 namespace FemaleCharacter;
@@ -50,6 +53,13 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<string, float> HandOffsets = new() { { "alyssa", 0.02f }, { "rachel", 0.05f } };
     private static readonly Dictionary<string, float> HeadOffsets = new() { { "alyssa", 0f }, { "rachel", 0f } };
     private static readonly Dictionary<string, float> OutfitHand = new();
+    private static bool _fillers = true;
+    private static bool _fillerLoadStarted;
+    private static AsyncOperationHandle<GameObject> _whiteHeadHandle;
+    private static AsyncOperationHandle<GameObject> _whiteArmsHandle;
+    private static GameObject _whiteHead;
+    private static GameObject _whiteArms;
+    private static readonly HashSet<string> HeadKeep = new() { "Neck", "Neck1", "Spine", "Spine1", "Spine2", "LeftShoulder", "RightShoulder" };
     private static readonly Dictionary<string, float> OutfitHead = new();
 
     public FemaleCharacter()
@@ -70,7 +80,7 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|outfithand <piece> <meters>|outfithead <piece> <meters>|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|outfithand <piece> <meters>|outfithead <piece> <meters>|fillers on|fillers off|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -96,6 +106,17 @@ public class FemaleCharacter : SonsMod
                 SaveSettings();
                 RebuildAll();
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "fillers")
+            {
+                if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
+                {
+                    _fillers = parts[1] == "on";
+                    SaveSettings();
+                    RebuildAll();
+                }
+                Say($"FemaleCharacter fillers: {(_fillers ? "on" : "off")}, white neck {(_whiteHead ? "loaded" : "not loaded")}, white arms {(_whiteArms ? "loaded" : "not loaded")}");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "outfit")
@@ -161,6 +182,8 @@ public class FemaleCharacter : SonsMod
                 var value = line.Substring(eq + 1).Trim().ToLowerInvariant();
                 if (key == "clothes")
                     _gameClothes = value == "game";
+                else if (key == "fillers")
+                    _fillers = value != "off";
                 else if (key.StartsWith("handoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f))
                     HandOffsets[key.Substring("handoffset.".Length)] = f;
                 else if (key.StartsWith("headoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
@@ -181,7 +204,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers={(_fillers ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -363,6 +386,7 @@ public class FemaleCharacter : SonsMod
             return;
 
         RefreshOutfits();
+        PollFillers();
         var seen = new HashSet<int>();
         foreach (var race in UnityEngine.Object.FindObjectsOfType<PlayerRaceSystem>())
         {
@@ -547,7 +571,188 @@ public class FemaleCharacter : SonsMod
         }
 
         UpdateOutfit(entry);
+        if (gameClothes)
+            AddFillers(entry, pBones);
         return entry;
+    }
+
+    private static void StartFillerLoad()
+    {
+        if (_fillerLoadStarted)
+            return;
+        var race = LocalPlayer.RaceSystem;
+        if (!race || race._races == null)
+            return;
+        _fillerLoadStarted = true;
+        try
+        {
+            for (int i = 0; i < race._races.Count; i++)
+            {
+                var r = race._races[i];
+                if (!r || r.GetRace != PlayerRace.Race.White)
+                    continue;
+                if (r.HeadAsset != null)
+                    _whiteHeadHandle = Addressables.LoadAssetAsync<GameObject>(r.HeadAsset.RuntimeKey);
+                if (r.ArmsAsset != null)
+                    _whiteArmsHandle = Addressables.LoadAssetAsync<GameObject>(r.ArmsAsset.RuntimeKey);
+                RLog.Msg("FemaleCharacter: loading white neck and arms");
+                return;
+            }
+            RLog.Warning("FemaleCharacter: White race entry not found");
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not start filler load: {e.Message}");
+        }
+    }
+
+    private static void PollFillers()
+    {
+        if (!_fillers || !_gameClothes)
+            return;
+        StartFillerLoad();
+        var changed = false;
+        try
+        {
+            if (!_whiteHead && _whiteHeadHandle.IsValid() && _whiteHeadHandle.IsDone)
+            {
+                _whiteHead = _whiteHeadHandle.Result;
+                if (_whiteHead)
+                    changed = true;
+                RLog.Msg($"FemaleCharacter: white neck {(_whiteHead ? "loaded" : "failed")}");
+            }
+            if (!_whiteArms && _whiteArmsHandle.IsValid() && _whiteArmsHandle.IsDone)
+            {
+                _whiteArms = _whiteArmsHandle.Result;
+                if (_whiteArms)
+                    changed = true;
+                RLog.Msg($"FemaleCharacter: white arms {(_whiteArms ? "loaded" : "failed")}");
+            }
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: filler load failed: {e.Message}");
+        }
+        if (changed)
+            RebuildAll();
+    }
+
+    private static void AddFillers(Entry entry, Dictionary<string, Transform> pBones)
+    {
+        if (!_fillers)
+            return;
+        if (_whiteHead && pBones.TryGetValue("Head", out var head))
+            AddFiller(entry, _whiteHead, pBones, name => HeadKeep.Contains(name) ? null : head, true);
+        if (_whiteArms && pBones.TryGetValue("LeftHand", out var lh) && pBones.TryGetValue("RightHand", out var rh))
+            AddFiller(entry, _whiteArms, pBones, name => name.Contains("Hand") ? (name.StartsWith("Left") ? lh : rh) : null, false);
+    }
+
+    private static void AddFiller(Entry entry, GameObject prefab, Dictionary<string, Transform> pBones, Func<string, Transform> collapseTo, bool head)
+    {
+        var dummies = new Dictionary<int, Transform>();
+        Transform Dummy(Transform parent)
+        {
+            if (dummies.TryGetValue(parent.GetInstanceID(), out var d))
+                return d;
+            var go = new GameObject("FemaleCharacter_Collapse");
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.identity;
+            go.transform.localScale = Vector3.one * 0.0001f;
+            entry.Owned.Add(go);
+            dummies[parent.GetInstanceID()] = go.transform;
+            return go.transform;
+        }
+
+        var inst = UnityEngine.Object.Instantiate(prefab);
+        inst.name = $"FemaleCharacter_Filler_{prefab.name}";
+        entry.Owned.Add(inst);
+        foreach (var mb in inst.GetComponentsInChildren<MonoBehaviour>(true))
+        {
+            try
+            {
+                UnityEngine.Object.DestroyImmediate(mb);
+            }
+            catch
+            {
+                mb.enabled = false;
+            }
+        }
+
+        var layer = LayerMask.NameToLayer("Player");
+        var fallback = pBones.TryGetValue("Spine2", out var s2) ? s2 : entry.PlayerHips;
+        foreach (var smr in inst.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            var lower = smr.name.ToLowerInvariant();
+            if (head && (lower.Contains("hair") || lower.Contains("eye")))
+            {
+                smr.enabled = false;
+                continue;
+            }
+            var names = BoneNames(smr);
+            if (names == null)
+            {
+                smr.enabled = false;
+                continue;
+            }
+            var mapped = new Transform[names.Length];
+            for (int i = 0; i < names.Length; i++)
+            {
+                var n = names[i];
+                var collapse = n == null ? null : collapseTo(n);
+                if (collapse)
+                    mapped[i] = Dummy(collapse);
+                else if (n != null && pBones.TryGetValue(n, out var b))
+                    mapped[i] = b;
+                else
+                    mapped[i] = head && pBones.TryGetValue("Head", out var hb) ? Dummy(hb) : fallback;
+            }
+            smr.bones = mapped;
+            smr.rootBone = fallback;
+            smr.updateWhenOffscreen = true;
+            smr.shadowCastingMode = ShadowCastingMode.On;
+            smr.enabled = true;
+            if (layer >= 0)
+                smr.gameObject.layer = layer;
+        }
+        inst.SetActive(true);
+    }
+
+    private static string[] BoneNames(SkinnedMeshRenderer smr)
+    {
+        var bones = smr.bones;
+        var mesh = smr.sharedMesh;
+        if (!mesh)
+            return null;
+        var count = mesh.bindposes.Length;
+        var names = new string[count];
+        var anyNull = false;
+        for (int i = 0; i < count; i++)
+        {
+            if (bones != null && i < bones.Length && bones[i])
+                names[i] = bones[i].name;
+            else
+                anyNull = true;
+        }
+        if (anyNull)
+        {
+            var cache = smr.GetComponent<SkinnedMeshBoneRemapCache>();
+            var paths = cache ? cache._bonePaths : null;
+            if (paths != null)
+            {
+                for (int i = 0; i < count && i < paths.Count; i++)
+                {
+                    if (names[i] != null)
+                        continue;
+                    var path = paths[i];
+                    if (string.IsNullOrEmpty(path))
+                        continue;
+                    var slash = path.LastIndexOf('/');
+                    names[i] = slash >= 0 ? path.Substring(slash + 1) : path;
+                }
+            }
+        }
+        return names;
     }
 
     private static Mannequin BuildMannequin(Transform frame, Transform srcRoot, Transform srcHips, bool withClothes)
@@ -651,6 +856,10 @@ public class FemaleCharacter : SonsMod
         if (entry.Female)
             UnityEngine.Object.Destroy(entry.Female);
         entry.Female = null;
+        foreach (var go in entry.Owned)
+            if (go)
+                UnityEngine.Object.Destroy(go);
+        entry.Owned.Clear();
         DestroyMannequin(entry.Mannequin);
         entry.Mannequin = null;
     }
@@ -1060,6 +1269,7 @@ public class FemaleCharacter : SonsMod
         public bool GameClothes;
         public float HandAdjust;
         public float HeadAdjust;
+        public readonly List<GameObject> Owned = new();
         public Mannequin Mannequin;
         public readonly List<Link> Snap = new();
         public PlayerRaceSystem Race;
