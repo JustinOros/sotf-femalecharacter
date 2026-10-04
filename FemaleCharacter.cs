@@ -47,6 +47,7 @@ public class FemaleCharacter : SonsMod
     private static UnityAction _beforeRender;
     private static bool _gameClothes;
     private static bool _settingsLoaded;
+    private static readonly Dictionary<string, float> HandOffsets = new() { { "alyssa", 0.02f }, { "rachel", 0.05f } };
 
     public FemaleCharacter()
     {
@@ -66,7 +67,7 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -94,6 +95,18 @@ public class FemaleCharacter : SonsMod
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
                 return;
             }
+            if (parts.Length >= 1 && parts[0] == "handoffset")
+            {
+                if (parts.Length < 3 || !HandOffsets.ContainsKey(parts[1]) || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var meters))
+                {
+                    Say($"FemaleCharacter hand offsets: {string.Join(", ", HandOffsets.Select(kv => $"{kv.Key} {kv.Value:F3}"))}. Use femalecharacter handoffset rachel 0.05");
+                    return;
+                }
+                HandOffsets[parts[1]] = Mathf.Clamp(meters, -0.2f, 0.2f);
+                SaveSettings();
+                Say($"FemaleCharacter: {parts[1]} hand offset {HandOffsets[parts[1]]:F3} m");
+                return;
+            }
             Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} clothes={(_gameClothes ? "game" : "own")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
         }
         catch (Exception e)
@@ -111,8 +124,21 @@ public class FemaleCharacter : SonsMod
         _settingsLoaded = true;
         try
         {
-            if (File.Exists(SettingsPath))
-                _gameClothes = File.ReadAllText(SettingsPath).Contains("clothes=game");
+            if (!File.Exists(SettingsPath))
+                return;
+            foreach (var raw in File.ReadAllLines(SettingsPath))
+            {
+                var line = raw.Trim();
+                var eq = line.IndexOf('=');
+                if (eq <= 0)
+                    continue;
+                var key = line.Substring(0, eq).Trim().ToLowerInvariant();
+                var value = line.Substring(eq + 1).Trim().ToLowerInvariant();
+                if (key == "clothes")
+                    _gameClothes = value == "game";
+                else if (key.StartsWith("handoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f))
+                    HandOffsets[key.Substring("handoffset.".Length)] = f;
+            }
         }
         catch (Exception e)
         {
@@ -124,7 +150,10 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            File.WriteAllText(SettingsPath, $"clothes={(_gameClothes ? "game" : "own")}");
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}" };
+            foreach (var kv in HandOffsets)
+                lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+            File.WriteAllLines(SettingsPath, lines);
         }
         catch (Exception e)
         {
@@ -396,8 +425,12 @@ public class FemaleCharacter : SonsMod
         {
             foreach (var name in new[] { "Neck", "LeftHand", "RightHand" })
             {
-                if (fBones.TryGetValue(name, out var f) && pBones.TryGetValue(name, out var p))
-                    entry.Snap.Add(new Link { Female = f, Player = p });
+                if (!fBones.TryGetValue(name, out var f) || !pBones.TryGetValue(name, out var p))
+                    continue;
+                var link = new Link { Female = f, Player = p };
+                if (name.EndsWith("Hand") && pBones.TryGetValue(name.Replace("Hand", "ForeArm"), out var up))
+                    link.Up = up;
+                entry.Snap.Add(link);
             }
         }
 
@@ -569,10 +602,19 @@ public class FemaleCharacter : SonsMod
                 link.Female.rotation = link.Player.rotation * link.Offset;
         }
 
+        HandOffsets.TryGetValue(entry.Model, out var handOffset);
         foreach (var link in entry.Snap)
         {
-            if (link.Female && link.Player)
-                link.Female.position = link.Player.position;
+            if (!link.Female || !link.Player)
+                continue;
+            var target = link.Player.position;
+            if (link.Up && handOffset != 0f)
+            {
+                var dir = link.Up.position - link.Player.position;
+                if (dir.sqrMagnitude > 1e-6f)
+                    target += dir.normalized * handOffset;
+            }
+            link.Female.position = target;
         }
     }
 
@@ -907,6 +949,7 @@ public class FemaleCharacter : SonsMod
 
     private sealed class Link
     {
+        public Transform Up;
         public Transform Female;
         public Transform Player;
         public Quaternion Offset;
