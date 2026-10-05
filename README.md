@@ -12,22 +12,22 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 ## Limitations
 
 - Your own view is unchanged. Others see you as female, you still see the normal first person arms.
-- With `clothes own` (the default) game clothing is hidden and the women wear their own outfit.
-- With `clothes game` only their head, hair and hands are shown on top of the normal game clothing, so every outfit you find in game works. The game clothes are cut for the male body.
+- With `clothes game` (the default) only their head, hair and hands are shown on top of the normal game clothing, so every outfit you find in game works. The game clothes are cut for the male body.
+- With `clothes own` game clothing is hidden and the women wear their own outfit.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `femalecharacter` | Show status |
-| `femalecharacter clothes own` | Women wear their own outfit (default) |
-| `femalecharacter clothes game` | Women wear the game clothing you have equipped |
-| `femalecharacter handoffset rachel 0.05` | In game clothes mode, raise a character's hands into the sleeves by this many meters (defaults: alyssa 0.02, rachel 0.05) |
-| `femalecharacter headoffset rachel 0.03` | In game clothes mode, lower a character's head and neck into the collar by this many meters (default 0) |
+| `femalecharacter clothes game` | Women wear the game clothing you have equipped (default) |
+| `femalecharacter clothes own` | Women wear their own outfit |
+| `femalecharacter handoffset rachel 0.05` | Fallback hand offset for outfits without their own value (defaults: alyssa 0.07, rachel 0.10) |
+| `femalecharacter headoffset rachel 0.03` | Fallback head offset for outfits without their own value (defaults: alyssa 0, rachel 0.01) |
 | `femalecharacter fillers on` / `off` | In game clothes mode, show the White male neck and forearms under the clothes to fill gaps at the collar and cuffs (default on) |
-| `femalecharacter outfit` | List the clothing pieces you are wearing and their adjustments |
-| `femalecharacter outfithand flightattendantuniform 0.02` | Extra hand offset added when that clothing piece is worn, for both women |
-| `femalecharacter outfithead flightattendantuniform 0.03` | Extra head offset added when that clothing piece is worn, for both women |
+| `femalecharacter outfit` | Show your current outfit and the hand and head offsets each woman uses with it |
+| `femalecharacter hand 0.07` | Set the hand offset for the previewed woman in your current outfit |
+| `femalecharacter head 0.01` | Set the head offset for the previewed woman in your current outfit |
 | `femalecharacter preview alyssa` | Show Alyssa in front of you copying your movement, for testing without another player |
 | `femalecharacter preview rachel` | Same for Rachel |
 | `femalecharacter preview off` | Remove the preview |
