@@ -48,6 +48,8 @@ public class FemaleCharacter : SonsMod
     private static Entry _preview;
     private static float _nextScan;
     private static UnityAction _beforeRender;
+    private static bool _beforeRenderHooked;
+    private static float _nextPlayerScan;
     private static bool _gameClothes = true;
     private static bool _settingsLoaded;
     private static readonly Dictionary<string, float> HandOffsets = new() { { "alyssa", 0.07f }, { "rachel", 0.10f } };
@@ -79,8 +81,9 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            _beforeRender = DelegateSupport.ConvertDelegate<UnityAction>(new Action(OnLateUpdate));
+            _beforeRender = DelegateSupport.ConvertDelegate<UnityAction>(new Action(DriveAll));
             Application.add_onBeforeRender(_beforeRender);
+            _beforeRenderHooked = true;
         }
         catch (Exception e)
         {
@@ -376,6 +379,7 @@ public class FemaleCharacter : SonsMod
             _preview = null;
         }
         _nextScan = 0f;
+        _nextPlayerScan = 0f;
         if (previewModel != null)
             SetPreview(previewModel);
     }
@@ -529,6 +533,14 @@ public class FemaleCharacter : SonsMod
 
     private static void OnLateUpdate()
     {
+        if (!_beforeRenderHooked)
+            DriveAll();
+    }
+
+    private static void DriveAll()
+    {
+        if (Entries.Count == 0 && _preview == null)
+            return;
         try
         {
             foreach (var entry in Entries.Values)
@@ -579,6 +591,9 @@ public class FemaleCharacter : SonsMod
 
         RefreshOutfits();
         PollFillers();
+        if (Time.unscaledTime < _nextPlayerScan)
+            return;
+        _nextPlayerScan = Time.unscaledTime + 5f;
         var seen = new HashSet<int>();
         foreach (var race in UnityEngine.Object.FindObjectsOfType<PlayerRaceSystem>())
         {
@@ -1059,7 +1074,8 @@ public class FemaleCharacter : SonsMod
             SrcRoot = srcRoot,
             SrcHips = srcHips
         };
-        m.Hips = CloneBone(srcHips, m.Root.transform, m);
+        var needed = NeededBones(frame, srcHips, withClothes);
+        m.Hips = CloneBone(srcHips, m.Root.transform, m, needed);
 
         if (withClothes)
         {
@@ -1093,7 +1109,45 @@ public class FemaleCharacter : SonsMod
         return m;
     }
 
-    private static Transform CloneBone(Transform src, Transform parent, Mannequin m)
+    private static HashSet<int> NeededBones(Transform frame, Transform srcHips, bool withClothes)
+    {
+        var names = new HashSet<string>(DriveOrder);
+        foreach (var n in new[] { "Neck1", "Spine1", "Spine2", "Head" })
+            names.Add(n);
+        var sources = new List<Transform>();
+        var race = frame.Find("RaceSystem");
+        if (race)
+            sources.Add(race);
+        var clothing = frame.Find("ClothingSystem");
+        if (clothing && withClothes)
+            sources.Add(clothing);
+        foreach (var src in sources)
+        {
+            foreach (var r in src.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var bones = r.bones;
+                if (bones == null)
+                    continue;
+                foreach (var b in bones)
+                    if (b)
+                        names.Add(b.name);
+            }
+        }
+
+        var ids = new HashSet<int>();
+        foreach (var t in srcHips.GetComponentsInChildren<Transform>(true))
+        {
+            if (!names.Contains(t.name))
+                continue;
+            var p = t;
+            while (p && ids.Add(p.GetInstanceID()) && p != srcHips)
+                p = p.parent;
+        }
+        ids.Add(srcHips.GetInstanceID());
+        return ids;
+    }
+
+    private static Transform CloneBone(Transform src, Transform parent, Mannequin m, HashSet<int> needed)
     {
         var go = new GameObject(src.name);
         var t = go.transform;
@@ -1104,7 +1158,11 @@ public class FemaleCharacter : SonsMod
         m.Pairs.Add(new Link { Player = src, Female = t });
         m.Bones.TryAdd(src.name, t);
         for (int i = 0; i < src.childCount; i++)
-            CloneBone(src.GetChild(i), t, m);
+        {
+            var child = src.GetChild(i);
+            if (needed.Contains(child.GetInstanceID()))
+                CloneBone(child, t, m, needed);
+        }
         return t;
     }
 
