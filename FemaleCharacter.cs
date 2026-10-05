@@ -54,7 +54,8 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<string, float> HeadOffsets = new() { { "alyssa", 0f }, { "rachel", 0.01f } };
     private static readonly Dictionary<string, float> OutfitHand = new();
     private static readonly Dictionary<string, float> OutfitHead = new();
-    private static bool _fillers = true;
+    private static bool _neckFiller = true;
+    private static bool _armFiller = true;
     private static bool _fillerLoadStarted;
     private static AsyncOperationHandle<GameObject> _whiteHeadHandle;
     private static AsyncOperationHandle<GameObject> _whiteArmsHandle;
@@ -80,7 +81,7 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|fillers off|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -112,11 +113,20 @@ public class FemaleCharacter : SonsMod
             {
                 if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
                 {
-                    _fillers = parts[1] == "on";
+                    _neckFiller = _armFiller = parts[1] == "on";
                     SaveSettings();
                     RebuildAll();
                 }
-                Say($"FemaleCharacter fillers: {(_fillers ? "on" : "off")}, white neck {(_whiteHead ? "loaded" : "not loaded")}, white arms {(_whiteArms ? "loaded" : "not loaded")}");
+                else if (parts.Length >= 3 && (parts[1] == "neck" || parts[1] == "arms") && (parts[2] == "on" || parts[2] == "off"))
+                {
+                    if (parts[1] == "neck")
+                        _neckFiller = parts[2] == "on";
+                    else
+                        _armFiller = parts[2] == "on";
+                    SaveSettings();
+                    RebuildAll();
+                }
+                Say($"FemaleCharacter fillers: neck {(_neckFiller ? "on" : "off")}, arms {(_armFiller ? "on" : "off")}, white neck {(_whiteHead ? "loaded" : "not loaded")}, white arms {(_whiteArms ? "loaded" : "not loaded")}");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "outfit")
@@ -190,7 +200,11 @@ public class FemaleCharacter : SonsMod
                 if (key == "clothes")
                     _gameClothes = value == "game";
                 else if (key == "fillers")
-                    _fillers = value != "off";
+                    _neckFiller = _armFiller = value != "off";
+                else if (key == "fillers.neck")
+                    _neckFiller = value != "off";
+                else if (key == "fillers.arms")
+                    _armFiller = value != "off";
                 else if (key.StartsWith("handoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f))
                     HandOffsets[key.Substring("handoffset.".Length)] = f;
                 else if (key.StartsWith("headoffset.") && float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h))
@@ -211,7 +225,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers={(_fillers ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -640,7 +654,7 @@ public class FemaleCharacter : SonsMod
 
     private static void PollFillers()
     {
-        if (!_fillers || !_gameClothes)
+        if ((!_neckFiller && !_armFiller) || !_gameClothes)
             return;
         StartFillerLoad();
         var changed = false;
@@ -671,11 +685,9 @@ public class FemaleCharacter : SonsMod
 
     private static void AddFillers(Entry entry, Dictionary<string, Transform> pBones)
     {
-        if (!_fillers)
-            return;
-        if (_whiteHead && pBones.TryGetValue("Head", out var head))
+        if (_neckFiller && _whiteHead && pBones.TryGetValue("Head", out var head))
             AddFiller(entry, _whiteHead, pBones, name => HeadKeep.Contains(name) ? null : head, true);
-        if (_whiteArms && pBones.TryGetValue("LeftHand", out var lh) && pBones.TryGetValue("RightHand", out var rh))
+        if (_armFiller && _whiteArms && pBones.TryGetValue("LeftHand", out var lh) && pBones.TryGetValue("RightHand", out var rh))
             AddFiller(entry, _whiteArms, pBones, name => name.Contains("Hand") ? (name.StartsWith("Left") ? lh : rh) : null, false);
     }
 

@@ -25,6 +25,8 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 | `femalecharacter handoffset rachel 0.05` | Fallback hand offset for outfits without their own value (defaults: alyssa 0.07, rachel 0.10) |
 | `femalecharacter headoffset rachel 0.03` | Fallback head offset for outfits without their own value (defaults: alyssa 0, rachel 0.01) |
 | `femalecharacter fillers on` / `off` | In game clothes mode, show the White male neck and forearms under the clothes to fill gaps at the collar and cuffs (default on) |
+| `femalecharacter fillers neck on` / `off` | Turn only the neck filler on or off |
+| `femalecharacter fillers arms on` / `off` | Turn only the forearm filler on or off |
 | `femalecharacter outfit` | Show your current outfit and the hand and head offsets each woman uses with it |
 | `femalecharacter hand 0.07` | Set the hand offset for the previewed woman in your current outfit |
 | `femalecharacter head 0.01` | Set the head offset for the previewed woman in your current outfit |
