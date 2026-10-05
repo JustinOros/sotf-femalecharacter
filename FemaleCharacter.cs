@@ -699,6 +699,12 @@ public class FemaleCharacter : SonsMod
         var inst = UnityEngine.Object.Instantiate(prefab);
         inst.name = $"FemaleCharacter_Filler_{prefab.name}";
         entry.Owned.Add(inst);
+
+        var playerRace = entry.Race ? entry.Race.transform : null;
+        var boneNames = new Dictionary<int, string[]>();
+        foreach (var smr in inst.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            boneNames[smr.GetInstanceID()] = BoneNames(smr, playerRace);
+
         foreach (var mb in inst.GetComponentsInChildren<MonoBehaviour>(true))
         {
             try
@@ -721,7 +727,7 @@ public class FemaleCharacter : SonsMod
                 smr.enabled = false;
                 continue;
             }
-            var names = BoneNames(smr);
+            boneNames.TryGetValue(smr.GetInstanceID(), out var names);
             if (names == null)
             {
                 smr.enabled = false;
@@ -761,7 +767,14 @@ public class FemaleCharacter : SonsMod
         inst.SetActive(true);
     }
 
-    private static string[] BoneNames(SkinnedMeshRenderer smr)
+    private static float MatrixDistance(Matrix4x4 a, Matrix4x4 b)
+    {
+        return Mathf.Abs(a.m00 - b.m00) + Mathf.Abs(a.m01 - b.m01) + Mathf.Abs(a.m02 - b.m02) + Mathf.Abs(a.m03 - b.m03)
+            + Mathf.Abs(a.m10 - b.m10) + Mathf.Abs(a.m11 - b.m11) + Mathf.Abs(a.m12 - b.m12) + Mathf.Abs(a.m13 - b.m13)
+            + Mathf.Abs(a.m20 - b.m20) + Mathf.Abs(a.m21 - b.m21) + Mathf.Abs(a.m22 - b.m22) + Mathf.Abs(a.m23 - b.m23);
+    }
+
+    private static string[] BoneNames(SkinnedMeshRenderer smr, Transform playerRace)
     {
         var bones = smr.bones;
         var mesh = smr.sharedMesh;
@@ -780,6 +793,8 @@ public class FemaleCharacter : SonsMod
         if (anyNull)
         {
             var cache = smr.GetComponent<SkinnedMeshBoneRemapCache>();
+            if (!cache)
+                cache = smr.GetComponentInParent<SkinnedMeshBoneRemapCache>();
             var paths = cache ? cache._bonePaths : null;
             if (paths != null)
             {
@@ -794,6 +809,59 @@ public class FemaleCharacter : SonsMod
                     names[i] = slash >= 0 ? path.Substring(slash + 1) : path;
                 }
             }
+        }
+        if (names.Any(n => n == null) && playerRace)
+        {
+            foreach (var other in playerRace.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (other.name != smr.name || other.bones == null || other.bones.Length != count)
+                    continue;
+                for (int i = 0; i < count; i++)
+                    if (names[i] == null && other.bones[i])
+                        names[i] = other.bones[i].name;
+                RLog.Msg($"FemaleCharacter: filler {smr.name} bone names taken from player {other.transform.parent.name}/{other.name}");
+                break;
+            }
+        }
+        if (names.Any(n => n == null) && playerRace)
+        {
+            var frame = playerRace.parent ? playerRace.parent : playerRace;
+            var binds = mesh.bindposes;
+            var known = new List<(Matrix4x4 bind, string name)>();
+            foreach (var other in frame.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var ob = other.bones;
+                var om = other.sharedMesh;
+                if (ob == null || !om)
+                    continue;
+                var obinds = om.bindposes;
+                for (int j = 0; j < ob.Length && j < obinds.Length; j++)
+                    if (ob[j])
+                        known.Add((obinds[j], ob[j].name));
+            }
+            int matched = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (names[i] != null)
+                    continue;
+                var best = float.MaxValue;
+                string bestName = null;
+                foreach (var (bind, name) in known)
+                {
+                    var d = MatrixDistance(bind, binds[i]);
+                    if (d < best)
+                    {
+                        best = d;
+                        bestName = name;
+                    }
+                }
+                if (bestName != null && best < 0.01f)
+                {
+                    names[i] = bestName;
+                    matched++;
+                }
+            }
+            RLog.Msg($"FemaleCharacter: filler {smr.name} matched {matched} bones by bind pose");
         }
         return names;
     }
