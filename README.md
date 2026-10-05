@@ -7,7 +7,7 @@ A client side RedLoader mod for Sons of the Forest that adds two female player c
 | Latin (2) | Alyssa (blonde) |
 | BlackB (6) | Rachel (brunette) |
 
-Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-character-select). Players with this mod see you as the woman. Players without it see the normal male character, so nothing breaks for them.
+Choose your character in the console with `femalecharacter alyssa`, `femalecharacter rachel` or `femalecharacter off`. The choice is saved and applied every time you load in. [sotf-character-select](https://github.com/JustinOros/sotf-character-select) also works, and the two mods stay in sync. Players with this mod see you as the woman. Players without it see the normal male character, so nothing breaks for them.
 
 ## Limitations
 
@@ -19,6 +19,9 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 
 | Command | What it does |
 |---|---|
+| `femalecharacter alyssa` | Play as Alyssa (saved) |
+| `femalecharacter rachel` | Play as Rachel (saved) |
+| `femalecharacter off` | Go back to the character you had before |
 | `femalecharacter` | Show status |
 | `femalecharacter clothes game` | Women wear the game clothing you have equipped (default) |
 | `femalecharacter clothes own` | Women wear their own outfit |

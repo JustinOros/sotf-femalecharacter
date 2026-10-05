@@ -55,6 +55,11 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<string, float> OutfitHand = new();
     private static readonly Dictionary<string, float> OutfitHead = new();
     private static bool _neckFiller = true;
+    private static string _play;
+    private static int _prevRace = -1;
+    private static bool _spawnApplied = true;
+    private static float _spawnApplyAt;
+    private static int _lastRaceSystem;
     private static readonly Dictionary<string, Color> SkinTones = new();
     private static bool _armFiller = true;
     private static bool _fillerLoadStarted;
@@ -82,7 +87,8 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview alyssa|preview rachel|preview off]");
+        _spawnApplied = false;
+        RLog.Msg($"FemaleCharacter loaded. Playing as: {_play ?? "off"}. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [alyssa|rachel|off|status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -91,6 +97,11 @@ public class FemaleCharacter : SonsMod
         try
         {
             var parts = (args ?? string.Empty).Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 1 && (parts[0] == "alyssa" || parts[0] == "rachel" || parts[0] == "off"))
+            {
+                Play(parts[0]);
+                return;
+            }
             if (parts.Length >= 1 && parts[0] == "preview")
             {
                 var model = parts.Length > 1 ? parts[1] : "alyssa";
@@ -235,6 +246,10 @@ public class FemaleCharacter : SonsMod
                     if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
                         SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
                 }
+                else if (key == "play")
+                    _play = value == "alyssa" || value == "rachel" ? value : null;
+                else if (key == "prevrace" && int.TryParse(value, out var pr))
+                    _prevRace = pr;
                 else if (key == "fillers.neck")
                     _neckFiller = value != "off";
                 else if (key == "fillers.arms")
@@ -259,7 +274,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -402,8 +417,103 @@ public class FemaleCharacter : SonsMod
         return map;
     }
 
+    private static PlayerRace.Race RaceFor(string model)
+    {
+        return model == "rachel" ? PlayerRace.Race.BlackB : PlayerRace.Race.Latin;
+    }
+
+    private static void Play(string choice)
+    {
+        var race = LocalPlayer.RaceSystem;
+        if (!race)
+        {
+            Say("FemaleCharacter: load into a game first");
+            return;
+        }
+
+        if (choice == "off")
+        {
+            var restore = _prevRace >= 0 ? (PlayerRace.Race)_prevRace : PlayerRace.Race.White;
+            _play = null;
+            _prevRace = -1;
+            race.ApplyRace(restore);
+            SaveSettings();
+            SyncCharacterSelect(restore);
+            Say($"FemaleCharacter: off, back to {restore}");
+            return;
+        }
+
+        var current = race.CurrentRace;
+        if (_play == null && current != PlayerRace.Race.Latin && current != PlayerRace.Race.BlackB)
+            _prevRace = (int)current;
+        _play = choice;
+        var target = RaceFor(choice);
+        race.ApplyRace(target);
+        SaveSettings();
+        SyncCharacterSelect(target);
+        Say($"FemaleCharacter: playing as {char.ToUpper(choice[0])}{choice.Substring(1)}. Other players with the mod see you as her.");
+    }
+
+    private static void SyncCharacterSelect(PlayerRace.Race race)
+    {
+        try
+        {
+            var path = Path.Combine(LoaderEnvironment.UserDataDirectory, "CharacterSelect.txt");
+            var installed = File.Exists(Path.Combine(LoaderEnvironment.ModsDirectory, "CharacterSelect.dll"));
+            if (installed || File.Exists(path))
+                File.WriteAllText(path, ((int)race).ToString());
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not sync CharacterSelect: {e.Message}");
+        }
+    }
+
+    private static void TickPlay()
+    {
+        var race = LocalPlayer.RaceSystem;
+        if (!race)
+            return;
+
+        var id = race.GetInstanceID();
+        if (id != _lastRaceSystem)
+        {
+            _lastRaceSystem = id;
+            _spawnApplied = false;
+            _spawnApplyAt = Time.unscaledTime + 3f;
+        }
+
+        if (!_spawnApplied)
+        {
+            if (Time.unscaledTime < _spawnApplyAt)
+                return;
+            _spawnApplied = true;
+            if (_play != null && race.CurrentRace != RaceFor(_play))
+            {
+                race.ApplyRace(RaceFor(_play));
+                RLog.Msg($"FemaleCharacter: applied saved character {_play}");
+            }
+            return;
+        }
+
+        if (_play != null && race.CurrentRace != RaceFor(_play))
+        {
+            RLog.Msg($"FemaleCharacter: character changed to {race.CurrentRace} by another mod, femalecharacter play cleared");
+            _play = null;
+            SaveSettings();
+        }
+    }
+
     private static void OnUpdate()
     {
+        try
+        {
+            TickPlay();
+        }
+        catch (Exception e)
+        {
+            RLog.Error($"FemaleCharacter play failed: {e.Message}");
+        }
         if (Time.unscaledTime < _nextScan)
             return;
         _nextScan = Time.unscaledTime + 1f;
