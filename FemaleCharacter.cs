@@ -533,8 +533,7 @@ public class FemaleCharacter : SonsMod
 
     private static void OnLateUpdate()
     {
-        if (!_beforeRenderHooked)
-            DriveAll();
+        DriveAll();
     }
 
     private static void DriveAll()
