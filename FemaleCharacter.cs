@@ -55,6 +55,7 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<string, float> OutfitHand = new();
     private static readonly Dictionary<string, float> OutfitHead = new();
     private static bool _neckFiller = true;
+    private static readonly Dictionary<string, Color> SkinTones = new();
     private static bool _armFiller = true;
     private static bool _fillerLoadStarted;
     private static AsyncOperationHandle<GameObject> _whiteHeadHandle;
@@ -81,7 +82,7 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
-        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview alyssa|preview rachel|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -127,6 +128,33 @@ public class FemaleCharacter : SonsMod
                     RebuildAll();
                 }
                 Say($"FemaleCharacter fillers: neck {(_neckFiller ? "on" : "off")}, arms {(_armFiller ? "on" : "off")}, white neck {(_whiteHead ? "loaded" : "not loaded")}, white arms {(_whiteArms ? "loaded" : "not loaded")}");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "skintone")
+            {
+                if (_preview == null)
+                {
+                    Say("FemaleCharacter: start a preview first, for example femalecharacter preview alyssa");
+                    return;
+                }
+                if (parts.Length >= 2 && parts[1] == "reset")
+                {
+                    SkinTones.Remove(_preview.Model);
+                    SaveSettings();
+                    RebuildAll();
+                    Say($"FemaleCharacter: {_preview?.Model} skin tone reset");
+                    return;
+                }
+                if (parts.Length < 4 || !float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var r) || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var g) || !float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var b))
+                {
+                    var cur = SkinTone(_preview.Model);
+                    Say($"FemaleCharacter {_preview.Model} filler skin tone {cur.r:F2} {cur.g:F2} {cur.b:F2}. Use femalecharacter skintone 1.1 1.05 1.0 or femalecharacter skintone reset");
+                    return;
+                }
+                SkinTones[_preview.Model] = new Color(Mathf.Clamp(r, 0f, 3f), Mathf.Clamp(g, 0f, 3f), Mathf.Clamp(b, 0f, 3f), 1f);
+                SaveSettings();
+                ApplySkinTone(_preview);
+                Say($"FemaleCharacter: {_preview.Model} filler skin tone {r:F2} {g:F2} {b:F2}");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "outfit")
@@ -201,6 +229,12 @@ public class FemaleCharacter : SonsMod
                     _gameClothes = value == "game";
                 else if (key == "fillers")
                     _neckFiller = _armFiller = value != "off";
+                else if (key.StartsWith("skintone."))
+                {
+                    var rgb = value.Split(',');
+                    if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
+                        SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
+                }
                 else if (key == "fillers.neck")
                     _neckFiller = value != "off";
                 else if (key == "fillers.arms")
@@ -230,6 +264,8 @@ public class FemaleCharacter : SonsMod
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
                 lines.Add($"headoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
+            foreach (var kv in SkinTones)
+                lines.Add($"skintone.{kv.Key}={string.Join(",", new[] { kv.Value.r, kv.Value.g, kv.Value.b }.Select(v => v.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)))}");
             foreach (var kv in OutfitHand.OrderBy(k => k.Key))
                 lines.Add($"hand.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in OutfitHead.OrderBy(k => k.Key))
@@ -683,6 +719,30 @@ public class FemaleCharacter : SonsMod
             RebuildAll();
     }
 
+    private static Color SkinTone(string model)
+    {
+        return SkinTones.TryGetValue(model, out var c) ? c : Color.white;
+    }
+
+    private static void ApplySkinTone(Entry entry)
+    {
+        var tone = SkinTone(entry.Model);
+        foreach (var r in entry.FillerRenderers)
+        {
+            if (!r)
+                continue;
+            foreach (var m in r.materials)
+            {
+                if (!m)
+                    continue;
+                if (m.HasProperty("_BaseColor"))
+                    m.SetColor("_BaseColor", tone);
+                if (m.HasProperty("_Color"))
+                    m.SetColor("_Color", tone);
+            }
+        }
+    }
+
     private static void AddFillers(Entry entry, Dictionary<string, Transform> pBones)
     {
         if (_neckFiller && _whiteHead && pBones.TryGetValue("Head", out var head))
@@ -775,8 +835,10 @@ public class FemaleCharacter : SonsMod
             smr.enabled = true;
             if (layer >= 0)
                 smr.gameObject.layer = layer;
+            entry.FillerRenderers.Add(smr);
         }
         inst.SetActive(true);
+        ApplySkinTone(entry);
     }
 
     private static float MatrixDistance(Matrix4x4 a, Matrix4x4 b)
@@ -1394,6 +1456,7 @@ public class FemaleCharacter : SonsMod
         public float HeadAdjust;
         public string OutfitKey;
         public readonly List<GameObject> Owned = new();
+        public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
         public Mannequin Mannequin;
         public readonly List<Link> Snap = new();
         public PlayerRaceSystem Race;

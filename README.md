@@ -27,6 +27,7 @@ Pick the race with [sotf-character-select](https://github.com/JustinOros/sotf-ch
 | `femalecharacter fillers on` / `off` | In game clothes mode, show the White male neck and forearms under the clothes to fill gaps at the collar and cuffs (default on) |
 | `femalecharacter fillers neck on` / `off` | Turn only the neck filler on or off |
 | `femalecharacter fillers arms on` / `off` | Turn only the forearm filler on or off |
+| `femalecharacter skintone 1.1 1.05 1.0` | Tint the filler neck and forearms for the previewed woman (red green blue, 1 is unchanged). `skintone reset` restores it |
 | `femalecharacter outfit` | Show your current outfit and the hand and head offsets each woman uses with it |
 | `femalecharacter hand 0.07` | Set the hand offset for the previewed woman in your current outfit |
 | `femalecharacter head 0.01` | Set the head offset for the previewed woman in your current outfit |
