@@ -728,17 +728,28 @@ public class FemaleCharacter : SonsMod
                 continue;
             }
             var mapped = new Transform[names.Length];
+            int kept = 0, collapsed = 0, missing = 0;
             for (int i = 0; i < names.Length; i++)
             {
                 var n = names[i];
                 var collapse = n == null ? null : collapseTo(n);
                 if (collapse)
+                {
                     mapped[i] = Dummy(collapse);
+                    collapsed++;
+                }
                 else if (n != null && pBones.TryGetValue(n, out var b))
+                {
                     mapped[i] = b;
+                    kept++;
+                }
                 else
+                {
                     mapped[i] = head && pBones.TryGetValue("Head", out var hb) ? Dummy(hb) : fallback;
+                    missing++;
+                }
             }
+            RLog.Msg($"FemaleCharacter: filler {entry.Model} {smr.name} bones {names.Length} kept {kept} collapsed {collapsed} missing {missing} kept names {string.Join(" ", names.Where((n, i) => n != null && mapped[i] && !mapped[i].name.StartsWith("FemaleCharacter_Collapse")).Distinct())}");
             smr.bones = mapped;
             smr.rootBone = fallback;
             smr.updateWhenOffscreen = true;
