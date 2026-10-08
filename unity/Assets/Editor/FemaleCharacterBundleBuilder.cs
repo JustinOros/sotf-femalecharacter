@@ -8,6 +8,7 @@ public static class FemaleCharacterBundleBuilder
     private const string ModelsDir = "Assets/Models";
     private const string PrefabDir = "Assets/Prefabs";
     private const string TexDir = "Assets/Textures";
+    private const string SharedTexDir = "Assets/Models/textures";
     private const string MeshDir = "Assets/Meshes";
     private const string OutDir = "Bundles";
     private const string BundleName = "femalecharacter";
@@ -21,6 +22,12 @@ public static class FemaleCharacterBundleBuilder
         Directory.CreateDirectory(MeshDir);
         Directory.CreateDirectory(OutDir);
 
+        if (Directory.Exists(SharedTexDir))
+        {
+            AssetDatabase.Refresh();
+            ConfigureTextures(SharedTexDir);
+        }
+
         foreach (var file in Directory.GetFiles(ModelsDir, "*.fbx"))
         {
             var path = file.Replace('\\', '/');
@@ -32,23 +39,30 @@ public static class FemaleCharacterBundleBuilder
                 continue;
             }
 
-            var texOut = $"{TexDir}/{name}";
-            Directory.CreateDirectory(texOut);
-            importer.ExtractTextures(texOut);
-            AssetDatabase.Refresh();
-            ConfigureTextures(texOut);
+            var generated = name.StartsWith("woman");
+            if (!generated)
+            {
+                var texOut = $"{TexDir}/{name}";
+                Directory.CreateDirectory(texOut);
+                importer.ExtractTextures(texOut);
+                AssetDatabase.Refresh();
+                ConfigureTextures(texOut);
+            }
 
             importer.animationType = ModelImporterAnimationType.Generic;
             importer.avatarSetup = ModelImporterAvatarSetup.NoAvatar;
             importer.importAnimation = false;
             importer.isReadable = true;
             importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
+            importer.materialLocation = ModelImporterMaterialLocation.InPrefab;
+            importer.materialSearch = ModelImporterMaterialSearch.Everywhere;
             importer.SaveAndReimport();
 
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
 
             SavePrefab(model, name, false, 0f);
-            SavePrefab(model, $"{name}_head", true, WristFractions.TryGetValue(name, out var wf) ? wf : 0f);
+            if (!generated)
+                SavePrefab(model, $"{name}_head", true, WristFractions.TryGetValue(name, out var wf) ? wf : 0f);
         }
 
         AssetDatabase.SaveAssets();
@@ -210,8 +224,8 @@ public static class FemaleCharacterBundleBuilder
             if (ti == null)
                 continue;
             var lower = Path.GetFileNameWithoutExtension(texPath).ToLowerInvariant();
-            ti.maxTextureSize = 2048;
-            if (lower.Contains("normal"))
+            ti.maxTextureSize = 1024;
+            if (lower.Contains("normal") || lower.Contains("_nrm") || lower.EndsWith("_nm") || lower.Contains("_norm") || lower.Contains("nrml") || lower.Contains("normals"))
             {
                 ti.textureType = TextureImporterType.NormalMap;
             }

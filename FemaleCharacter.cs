@@ -8,6 +8,8 @@ using RedLoader.Utils;
 using Sons.Wearable.Race;
 using SonsSdk;
 using SonsSdk.Attributes;
+using SotfModChat;
+using Sons.Wearable.Clothing;
 using TheForest.Utils;
 using Endnight.Animation;
 using UnityEngine;
@@ -22,11 +24,9 @@ public class FemaleCharacter : SonsMod
 {
     private const string BundleFile = "femalecharacter";
 
-    private static readonly Dictionary<PlayerRace.Race, string> RaceModels = new()
-    {
-        { PlayerRace.Race.Latin, "alyssa" },
-        { PlayerRace.Race.BlackB, "rachel" }
-    };
+    private const int Slots = 8;
+    private static readonly Dictionary<string, string> LegacyNames = new() { { "alyssa", "woman2" }, { "rachel", "woman6" } };
+    private static readonly Dictionary<string, bool> Available = new();
 
     private static readonly List<string[]> Chains = BuildChains();
     private static readonly Dictionary<string, string> AimChild = BuildAimChildren();
@@ -50,10 +50,16 @@ public class FemaleCharacter : SonsMod
     private static UnityAction _beforeRender;
     private static bool _beforeRenderHooked;
     private static float _nextPlayerScan;
-    private static bool _gameClothes = true;
+    private static bool _gameClothes;
+    private static string _wear;
+    private static string _wearClothingKey;
+    private static readonly Dictionary<ulong, string> RemoteWear = new();
+    private static readonly Dictionary<int, string> FullOutfits = new() { { 492, "tuxedo" }, { 487, "pyjamas" }, { 499, "wetsuit" }, { 639, "spacesuit" }, { 703, "priest" }, { 749, "flightattendant" }, { 572, "goldenarmour" } };
+    private static readonly Dictionary<int, string> TopOutfits = new() { { 500, "puffyjacket" }, { 495, "tactical" }, { 490, "hoodie" }, { 491, "oldjacket" }, { 493, "leatherjacket" } };
+    private static readonly string[] VirginiaOutfits = { "camo:v_camosuit", "dress:v_dress", "leather:v_leathersuit", "track:v_tracksuit", "swim:v_swimsuit" };
     private static bool _settingsLoaded;
-    private static readonly Dictionary<string, float> HandOffsets = new() { { "alyssa", 0.07f }, { "rachel", 0.10f } };
-    private static readonly Dictionary<string, float> HeadOffsets = new() { { "alyssa", 0f }, { "rachel", 0.01f } };
+    private static readonly Dictionary<string, float> HandOffsets = new() { { "woman2", 0.07f }, { "woman6", 0.10f } };
+    private static readonly Dictionary<string, float> HeadOffsets = new() { { "woman2", 0f }, { "woman6", 0.01f } };
     private static readonly Dictionary<string, float> OutfitHand = new();
     private static readonly Dictionary<string, float> OutfitHead = new();
     private static bool _neckFiller = true;
@@ -69,12 +75,17 @@ public class FemaleCharacter : SonsMod
     private static AsyncOperationHandle<GameObject> _whiteArmsHandle;
     private static GameObject _whiteHead;
     private static GameObject _whiteArms;
+    private const string ChatName = "FemaleCharacter";
+    private static readonly Dictionary<ulong, bool> OptedIn = new();
+    private static float _announceAt = -1f;
+    private static bool _announceAsk;
     private static readonly HashSet<string> HeadKeep = new() { "Neck", "Neck1", "Spine", "Spine1", "Spine2", "LeftShoulder", "RightShoulder" };
 
     public FemaleCharacter()
     {
         OnUpdateCallback = OnUpdate;
         OnLateUpdateCallback = OnLateUpdate;
+        HarmonyPatchAll = true;
     }
 
     protected override void OnSdkInitialized()
@@ -90,8 +101,9 @@ public class FemaleCharacter : SonsMod
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
         LoadSettings();
+        ModChat.On(ChatName, OnAnnounce);
         _spawnApplied = false;
-        RLog.Msg($"FemaleCharacter loaded. Playing as: {_play ?? "off"}. Latin shows as Alyssa, BlackB shows as Rachel. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [alyssa|rachel|off|status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview alyssa|preview rachel|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Playing as: {_play ?? "off"}. Woman0 to Woman7 match race slots 0 to 7. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [woman0-woman7|off|status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview woman0-woman7|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -100,14 +112,14 @@ public class FemaleCharacter : SonsMod
         try
         {
             var parts = (args ?? string.Empty).Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 1 && (parts[0] == "alyssa" || parts[0] == "rachel" || parts[0] == "off"))
+            if (parts.Length == 1 && (IsModel(parts[0]) || parts[0] == "off"))
             {
                 Play(parts[0]);
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "preview")
             {
-                var model = parts.Length > 1 ? parts[1] : "alyssa";
+                var model = parts.Length > 1 ? parts[1] : "woman2";
                 SetPreview(model);
                 return;
             }
@@ -122,6 +134,17 @@ public class FemaleCharacter : SonsMod
                 SaveSettings();
                 RebuildAll();
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "wear")
+            {
+                if (parts.Length < 2)
+                {
+                    Say($"FemaleCharacter wearing {_wear ?? $"game outfit ({FromClothing(LocalFrame())})"}. Use femalecharacter wear <outfit> or femalecharacter wear auto");
+                    return;
+                }
+                SetWear(parts[1] == "auto" || parts[1] == "off" ? null : parts[1]);
+                Say($"FemaleCharacter: wearing {_wear ?? "game outfit"}");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "fillers")
@@ -148,7 +171,7 @@ public class FemaleCharacter : SonsMod
             {
                 if (_preview == null)
                 {
-                    Say("FemaleCharacter: start a preview first, for example femalecharacter preview alyssa");
+                    Say("FemaleCharacter: start a preview first, for example femalecharacter preview woman2");
                     return;
                 }
                 if (parts.Length >= 2 && parts[1] == "reset")
@@ -174,14 +197,14 @@ public class FemaleCharacter : SonsMod
             if (parts.Length >= 1 && parts[0] == "outfit")
             {
                 var key = OutfitKey(LocalFrame());
-                Say($"FemaleCharacter outfit: {key}. alyssa hand {HandFor("alyssa", key):F3} head {HeadFor("alyssa", key):F3}, rachel hand {HandFor("rachel", key):F3} head {HeadFor("rachel", key):F3}");
+                Say($"FemaleCharacter outfit: {key}. {string.Join(", ", AvailableModels().Select(m => $"{Display(m)} hand {HandFor(m, key):F3} head {HeadFor(m, key):F3}"))}");
                 return;
             }
             if (parts.Length >= 1 && (parts[0] == "hand" || parts[0] == "head"))
             {
                 if (_preview == null)
                 {
-                    Say("FemaleCharacter: start a preview first, for example femalecharacter preview rachel");
+                    Say("FemaleCharacter: start a preview first, for example femalecharacter preview woman6");
                     return;
                 }
                 var key = OutfitKey(LocalFrame());
@@ -204,7 +227,7 @@ public class FemaleCharacter : SonsMod
                 var label = parts[0] == "handoffset" ? "hand" : "head";
                 if (parts.Length < 3 || !table.ContainsKey(parts[1]) || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var meters))
                 {
-                    Say($"FemaleCharacter {label} offsets: {string.Join(", ", table.Select(kv => $"{kv.Key} {kv.Value:F3}"))}. Use femalecharacter {parts[0]} rachel 0.03");
+                    Say($"FemaleCharacter {label} offsets: {string.Join(", ", table.Select(kv => $"{kv.Key} {kv.Value:F3}"))}. Use femalecharacter {parts[0]} woman6 0.03");
                     return;
                 }
                 table[parts[1]] = Mathf.Clamp(meters, -0.2f, 0.2f);
@@ -212,7 +235,7 @@ public class FemaleCharacter : SonsMod
                 Say($"FemaleCharacter: {parts[1]} {label} offset {table[parts[1]]:F3} m");
                 return;
             }
-            Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} clothes={(_gameClothes ? "game" : "own")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
+            Say($"FemaleCharacter: bundle={(_bundle ? "loaded" : "missing")} clothes={(_gameClothes ? "game" : "own")} rest={(_playerRest != null ? _playerRest.Count : 0)} bones, {OptedIn.Count(kv => kv.Value)} players opted in, {Entries.Count} remote players shown as female, preview={(_preview != null ? _preview.Model : "off")}");
         }
         catch (Exception e)
         {
@@ -237,8 +260,8 @@ public class FemaleCharacter : SonsMod
                 var eq = line.IndexOf('=');
                 if (eq <= 0)
                     continue;
-                var key = line.Substring(0, eq).Trim().ToLowerInvariant();
-                var value = line.Substring(eq + 1).Trim().ToLowerInvariant();
+                var key = Migrate(line.Substring(0, eq).Trim().ToLowerInvariant());
+                var value = Migrate(line.Substring(eq + 1).Trim().ToLowerInvariant());
                 if (key == "clothes")
                     _gameClothes = value == "game";
                 else if (key == "fillers")
@@ -249,8 +272,10 @@ public class FemaleCharacter : SonsMod
                     if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
                         SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
                 }
+                else if (key == "wear")
+                    _wear = value == "off" || value.Length == 0 ? null : value;
                 else if (key == "play")
-                    _play = value == "alyssa" || value == "rachel" ? value : null;
+                    _play = IsModel(value) ? value : null;
                 else if (key == "prevrace" && int.TryParse(value, out var pr))
                     _prevRace = pr;
                 else if (key == "fillers.neck")
@@ -277,7 +302,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -350,10 +375,130 @@ public class FemaleCharacter : SonsMod
         entry.HeadAdjust = HeadFor(entry.Model, entry.OutfitKey);
     }
 
+    private static string FromClothing(Transform frame)
+    {
+        try
+        {
+            var cs = frame ? frame.GetComponentInChildren<PlayerClothingSystem>(true) : null;
+            var ids = cs ? cs.GetCurrentClothingIds() : null;
+            if (ids == null)
+                return "base";
+            var list = new List<int>();
+            for (int i = 0; i < ids.Count; i++)
+                list.Add(ids[i]);
+            foreach (var id in list)
+                if (FullOutfits.TryGetValue(id, out var full))
+                    return full;
+            foreach (var kv in TopOutfits)
+                if (list.Contains(kv.Key))
+                    return kv.Value;
+            return "base";
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not read clothing: {e.Message}");
+            return "base";
+        }
+    }
+
+    private static string ClothingKey(Transform frame)
+    {
+        try
+        {
+            var cs = frame ? frame.GetComponentInChildren<PlayerClothingSystem>(true) : null;
+            var ids = cs ? cs.GetCurrentClothingIds() : null;
+            if (ids == null)
+                return string.Empty;
+            var list = new List<int>();
+            for (int i = 0; i < ids.Count; i++)
+                list.Add(ids[i]);
+            list.Sort();
+            return string.Join(",", list);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string DesiredOutfit(Entry entry)
+    {
+        if (entry.Preview)
+            return _wear ?? FromClothing(LocalFrame());
+        if (entry.NetId == 0UL)
+            entry.NetId = ModChat.IdOf(entry.Race);
+        if (RemoteWear.TryGetValue(entry.NetId, out var wear) && wear != null)
+            return wear;
+        return FromClothing(entry.Frame);
+    }
+
+    private static void ApplyOutfit(Entry entry, string outfit)
+    {
+        if (!entry.Female)
+            return;
+        var smrs = entry.Female.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        var known = false;
+        foreach (var smr in smrs)
+            if (smr && smr.gameObject.name.StartsWith("body__") && OutfitList(smr.gameObject.name).Contains(outfit))
+                known = true;
+        if (!known)
+            outfit = "base";
+        foreach (var smr in smrs)
+        {
+            if (!smr)
+                continue;
+            var n = smr.gameObject.name;
+            if (n.StartsWith("body__") || n.StartsWith("piece__"))
+                smr.gameObject.SetActive(OutfitList(n).Contains(outfit));
+        }
+        if (entry.Outfit != outfit)
+            RLog.Msg($"FemaleCharacter: {entry.Model} wearing {outfit}");
+        entry.Outfit = outfit;
+    }
+
+    private static void HideNew(Entry entry)
+    {
+        if (!entry.Frame)
+            return;
+        foreach (var t in new[] { entry.Race ? entry.Race.transform : null, entry.Frame.Find("ClothingSystem") })
+        {
+            if (!t)
+                continue;
+            foreach (var r in t.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (!r || entry.Hidden.Contains(r))
+                    continue;
+                entry.Hidden.Add(r);
+                entry.HiddenWasEnabled.Add(r.enabled);
+            }
+        }
+    }
+
+    private static string[] OutfitList(string objectName)
+    {
+        var parts = objectName.Split("__");
+        return parts.Length > 1 ? parts[1].Split('+') : Array.Empty<string>();
+    }
+
     private static void RefreshOutfits()
     {
         foreach (var entry in Entries.Values)
+        {
             UpdateOutfit(entry);
+            if (!entry.GameClothes)
+            {
+                HideNew(entry);
+                var want = DesiredOutfit(entry);
+                if (want != entry.Outfit)
+                    ApplyOutfit(entry, want);
+            }
+        }
+        if (_preview != null && !_preview.GameClothes)
+        {
+            var want = DesiredOutfit(_preview);
+            if (want != _preview.Outfit)
+                ApplyOutfit(_preview, want);
+        }
         if (_preview == null)
             return;
         var before = _preview.OutfitKey;
@@ -423,7 +568,56 @@ public class FemaleCharacter : SonsMod
 
     private static PlayerRace.Race RaceFor(string model)
     {
-        return model == "rachel" ? PlayerRace.Race.BlackB : PlayerRace.Race.Latin;
+        return (PlayerRace.Race)(model[model.Length - 1] - '0');
+    }
+
+    private static string ModelFor(PlayerRace.Race race)
+    {
+        var model = $"woman{(int)race}";
+        return HasModel(model) ? model : null;
+    }
+
+    private static bool IsModel(string name)
+    {
+        return name != null && name.Length == 6 && name.StartsWith("woman") && name[5] >= '0' && name[5] < '0' + Slots;
+    }
+
+    private static bool HasModel(string model)
+    {
+        if (!IsModel(model) || !_bundle)
+            return false;
+        if (Available.TryGetValue(model, out var known))
+            return known;
+        var found = !string.IsNullOrEmpty(AssetName(model));
+        Available[model] = found;
+        return found;
+    }
+
+    private static string AssetName(string name)
+    {
+        var names = _bundle.GetAllAssetNames();
+        foreach (var candidate in new[] { name }.Concat(LegacyNames.Where(kv => name.StartsWith(kv.Value)).Select(kv => kv.Key + name.Substring(kv.Value.Length))))
+            foreach (var asset in names)
+                if (Path.GetFileNameWithoutExtension(asset) == candidate)
+                    return candidate;
+        return null;
+    }
+
+    private static IEnumerable<string> AvailableModels()
+    {
+        return Enumerable.Range(0, Slots).Select(i => $"woman{i}").Where(HasModel);
+    }
+
+    private static string Display(string model)
+    {
+        return IsModel(model) ? $"Woman{model[5]}" : model;
+    }
+
+    private static string Migrate(string text)
+    {
+        foreach (var kv in LegacyNames)
+            text = text.Replace(kv.Key, kv.Value);
+        return text;
     }
 
     private static void Play(string choice)
@@ -443,19 +637,27 @@ public class FemaleCharacter : SonsMod
             race.ApplyRace(restore);
             SaveSettings();
             SyncCharacterSelect(restore);
+            QueueAnnounce(false);
             Say($"FemaleCharacter: off, back to {restore}");
             return;
         }
 
+        if (!EnsureReady() || !HasModel(choice))
+        {
+            Say($"FemaleCharacter: {Display(choice)} has no model yet. Available: {string.Join(", ", AvailableModels().Select(Display))}");
+            return;
+        }
+
         var current = race.CurrentRace;
-        if (_play == null && current != PlayerRace.Race.Latin && current != PlayerRace.Race.BlackB)
+        if (_play == null)
             _prevRace = (int)current;
         _play = choice;
         var target = RaceFor(choice);
         race.ApplyRace(target);
         SaveSettings();
         SyncCharacterSelect(target);
-        Say($"FemaleCharacter: playing as {char.ToUpper(choice[0])}{choice.Substring(1)}. Other players with the mod see you as her.");
+        QueueAnnounce(false);
+        Say($"FemaleCharacter: playing as {Display(choice)}. Other players with the mod see you as her.");
     }
 
     private static void SyncCharacterSelect(PlayerRace.Race race)
@@ -497,6 +699,8 @@ public class FemaleCharacter : SonsMod
                 race.ApplyRace(RaceFor(_play));
                 RLog.Msg($"FemaleCharacter: applied saved character {_play}");
             }
+            OptedIn.Clear();
+            QueueAnnounce(true);
             return;
         }
 
@@ -505,7 +709,126 @@ public class FemaleCharacter : SonsMod
             RLog.Msg($"FemaleCharacter: character changed to {race.CurrentRace} by another mod, femalecharacter play cleared");
             _play = null;
             SaveSettings();
+            QueueAnnounce(false);
         }
+        TickAnnounce();
+    }
+
+    private static string AnnounceText()
+    {
+        var race = LocalPlayer.RaceSystem;
+        if (_play == null || !race)
+            return "off";
+        return _wear != null ? $"{race.CurrentRace} {_wear}" : race.CurrentRace.ToString();
+    }
+
+    private static string VirginiaOutfitFor(string itemName)
+    {
+        if (string.IsNullOrEmpty(itemName))
+            return null;
+        var lower = itemName.ToLowerInvariant();
+        if (!lower.Contains("virginia"))
+            return null;
+        foreach (var pair in VirginiaOutfits)
+        {
+            var split = pair.Split(':');
+            if (lower.Contains(split[0]))
+                return split[1];
+        }
+        return null;
+    }
+
+    private static int _lastHeldId = -1;
+
+    private static void TickWear()
+    {
+        if (_play == null && _preview == null && _wear == null)
+            return;
+        var inventory = LocalPlayer.Inventory;
+        if (!inventory)
+            return;
+        var held = inventory.RightHandItem;
+        var heldId = held != null ? held._itemID : -1;
+        if (heldId != _lastHeldId)
+        {
+            _lastHeldId = heldId;
+            var outfit = held != null && held.Data != null ? VirginiaOutfitFor(held.Data.Name) : null;
+            if (outfit != null && outfit != _wear)
+            {
+                SetWear(outfit);
+                Say($"FemaleCharacter: wearing {outfit.Substring(2)}");
+                return;
+            }
+        }
+        if (_wear != null && _wearClothingKey == null)
+        {
+            var initial = ClothingKey(LocalFrame());
+            if (initial != string.Empty)
+                _wearClothingKey = initial;
+        }
+        else if (_wear != null)
+        {
+            var key = ClothingKey(LocalFrame());
+            if (key != string.Empty && key != _wearClothingKey)
+            {
+                RLog.Msg("FemaleCharacter: clothing changed, back to game outfit");
+                SetWear(null);
+            }
+        }
+    }
+
+    private static void SetWear(string outfit)
+    {
+        _wear = outfit;
+        _wearClothingKey = outfit != null ? ClothingKey(LocalFrame()) : null;
+        SaveSettings();
+        QueueAnnounce(false);
+        RefreshOutfits();
+    }
+
+    private static void QueueAnnounce(bool ask)
+    {
+        _announceAsk |= ask;
+        _announceAt = Time.unscaledTime + 1.5f;
+    }
+
+    private static void TickAnnounce()
+    {
+        if (_announceAt < 0f || Time.unscaledTime < _announceAt)
+            return;
+        var text = AnnounceText() + (_announceAsk ? " ?" : string.Empty);
+        if (ModChat.Send(ChatName, text))
+            RLog.Msg($"FemaleCharacter: announced {text}");
+        _announceAt = -1f;
+        _announceAsk = false;
+    }
+
+    private static void OnAnnounce(ulong sender, string text)
+    {
+        if (sender == 0UL)
+            return;
+        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return;
+        var on = !parts[0].Equals("off", StringComparison.OrdinalIgnoreCase);
+        var ask = parts.Contains("?");
+        string wear = null;
+        for (int i = 1; i < parts.Length; i++)
+            if (parts[i] != "?" && parts[i].All(c => char.IsLetterOrDigit(c) || c == '_'))
+                wear = parts[i].ToLowerInvariant();
+        RemoteWear.TryGetValue(sender, out var oldWear);
+        RemoteWear[sender] = wear;
+        if (oldWear != wear)
+            RLog.Msg($"FemaleCharacter: player {sender} wearing {wear ?? "game outfit"}");
+        OptedIn.TryGetValue(sender, out var was);
+        OptedIn[sender] = on;
+        if (was != on)
+        {
+            _nextPlayerScan = 0f;
+            RLog.Msg($"FemaleCharacter: player {sender} {(on ? $"opted in as {parts[0]}" : "opted out")}");
+        }
+        if (ask && _play != null)
+            QueueAnnounce(false);
     }
 
     private static void OnUpdate()
@@ -513,6 +836,7 @@ public class FemaleCharacter : SonsMod
         try
         {
             TickPlay();
+            TickWear();
         }
         catch (Exception e)
         {
@@ -611,7 +935,9 @@ public class FemaleCharacter : SonsMod
                 continue;
 
             var id = race.GetInstanceID();
-            RaceModels.TryGetValue(race.CurrentRace, out var model);
+            string model = null;
+            if (OptedIn.TryGetValue(ModChat.IdOf(race), out var optedIn) && optedIn)
+                model = ModelFor(race.CurrentRace);
 
             if (Entries.TryGetValue(id, out var existing))
             {
@@ -665,7 +991,7 @@ public class FemaleCharacter : SonsMod
 
     private static Entry Create(PlayerRaceSystem race, string model, bool preview)
     {
-        var gameClothes = _gameClothes;
+        var gameClothes = _gameClothes && _bundle && !string.IsNullOrEmpty(AssetName($"{model}_head"));
         var prefabName = gameClothes ? $"{model}_head" : model;
         var prefab = GetPrefab(prefabName);
         if (!prefab)
@@ -711,7 +1037,7 @@ public class FemaleCharacter : SonsMod
         female.transform.localScale = Vector3.one * scale;
         RLog.Msg($"FemaleCharacter: {prefabName} leg {fLeg:F3} player leg {pLeg:F3} scale {scale:F3}");
 
-        var entry = new Entry { Model = model, GameClothes = gameClothes, Race = race, Frame = frame, Female = female, Mannequin = mannequin };
+        var entry = new Entry { Model = model, GameClothes = gameClothes, Race = race, Frame = frame, Female = female, Mannequin = mannequin, Preview = preview };
         foreach (var name in DriveOrder)
         {
             if (name.Contains("Hand"))
@@ -779,6 +1105,8 @@ public class FemaleCharacter : SonsMod
         UpdateOutfit(entry);
         if (gameClothes)
             AddFillers(entry, pBones);
+        else
+            ApplyOutfit(entry, DesiredOutfit(entry));
         return entry;
     }
 
@@ -1271,7 +1599,8 @@ public class FemaleCharacter : SonsMod
     {
         if (Prefabs.TryGetValue(model, out var cached) && cached)
             return cached;
-        var obj = _bundle.LoadAsset(model, Il2CppType.Of<GameObject>());
+        var assetName = AssetName(model);
+        var obj = assetName != null ? _bundle.LoadAsset(assetName, Il2CppType.Of<GameObject>()) : null;
         var prefab = obj ? obj.TryCast<GameObject>() : null;
         if (!prefab)
         {
@@ -1468,7 +1797,7 @@ public class FemaleCharacter : SonsMod
         var normal = src.HasProperty("_BumpMap") ? src.GetTexture("_BumpMap") : null;
         var name = src.name.ToLowerInvariant();
         var texName = main ? main.name.ToLowerInvariant() : string.Empty;
-        var isHair = name.Contains("hair") || texName.Contains("hair") || src.renderQueue >= 2450 || (src.HasProperty("_Mode") && src.GetFloat("_Mode") > 0.5f);
+        var isHair = name.Contains("hair") || texName.Contains("hair") || name.Contains("eyebrow") || name.Contains("eyelash") || texName.Contains("eyebrow") || texName.Contains("eyelash") || texName.EndsWith("_eye") || src.renderQueue >= 2450 || (src.HasProperty("_Mode") && src.GetFloat("_Mode") > 0.5f);
 
         var baseMat = isHair && _hairBase ? _hairBase : _litBase;
         var m = new Material(baseMat) { name = $"FC_{src.name}" };
@@ -1622,6 +1951,9 @@ public class FemaleCharacter : SonsMod
         public float HandAdjust;
         public float HeadAdjust;
         public string OutfitKey;
+        public string Outfit;
+        public ulong NetId;
+        public bool Preview;
         public readonly List<GameObject> Owned = new();
         public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
         public Mannequin Mannequin;

@@ -3,8 +3,8 @@
   "id": "FemaleCharacter",
   "name": "FemaleCharacter",
   "author": "JustinOros",
-  "version": "0.5.2",
-  "description": "Shows the Latin and BlackB player characters as two female characters, Alyssa and Rachel, for players with the mod",
+  "version": "1.0.1",
+  "description": "Lets players opt in to be shown as a female character for their race slot (Woman0 to Woman7) to other players with the mod",
   "gameVersion": "1.0.0",
   "platform": "Client",
   "type": "Mod"
