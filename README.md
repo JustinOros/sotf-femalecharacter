@@ -27,7 +27,7 @@ When you load in or change character, the mod sends a short chat line such as `[
 
 - Your own view is unchanged. Others see you as female, you still see the normal first person arms.
 - The outfits are look-alikes made from MakeHuman clothing, not the game's own models.
-- The backpack is the game's own model and sits where it would on the male body. Other pieces you add on top (helmet, rebreather) are not shown on the women.
+- Backpacks, armour, hats, masks and other add-ons are not shown on the women. Weapons and tools in their hands are.
 
 ## Outfits
 
@@ -53,7 +53,6 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 | `femalecharacter wear` | Show the outfit you are wearing |
 | `femalecharacter wear v_dress` | Wear an outfit by name: base, tactical, hoodie, oldjacket, leatherjacket, puffyjacket, tuxedo, pyjamas, wetsuit, spacesuit, priest, flightattendant, goldenarmour, v_camosuit, v_dress, v_leathersuit, v_tracksuit, v_swimsuit |
 | `femalecharacter wear auto` | Follow your game clothing again |
-| `femalecharacter backpack on` / `off` | Show or hide your backpack on your woman (saved, other players with the mod see your choice) |
 | `femalecharacter hands on` / `off` | Her hands follow the player's real hand positions so they line up with held weapons and tools (default on) |
 | `femalecharacter announce` | Send your character to other players again, for example after someone joins |
 | `femalecharacter preview woman2` | Show Woman2 in front of you copying your movement and outfit, for testing without another player |
