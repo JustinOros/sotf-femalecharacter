@@ -1222,6 +1222,8 @@ public class FemaleCharacter : SonsMod
 
         if (!gameClothes)
         {
+            if (pBones.TryGetValue("WeaponRoot", out var weaponRoot) || (frame && (weaponRoot = FindDeep(frame, "WeaponRoot"))))
+                entry.Hands.Add(weaponRoot);
             foreach (var side in new[] { "Left", "Right" })
             {
                 if (pBones.TryGetValue($"{side}Hand", out var handBone))
