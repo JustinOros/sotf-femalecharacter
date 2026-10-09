@@ -52,6 +52,9 @@ public class FemaleCharacter : SonsMod
     private static float _nextPlayerScan;
     private static bool _gameClothes;
     private static string _wear;
+    private static bool _backpack = true;
+    private static bool _armIk = true;
+    private static readonly Dictionary<ulong, bool> RemoteBackpack = new();
     private static string _wearClothingKey;
     private static readonly Dictionary<ulong, string> RemoteWear = new();
     private static readonly Dictionary<int, string> FullOutfits = new() { { 492, "tuxedo" }, { 487, "pyjamas" }, { 499, "wetsuit" }, { 639, "spacesuit" }, { 703, "priest" }, { 749, "flightattendant" }, { 572, "goldenarmour" } };
@@ -134,6 +137,30 @@ public class FemaleCharacter : SonsMod
                 SaveSettings();
                 RebuildAll();
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "hands")
+            {
+                if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
+                {
+                    _armIk = parts[1] == "on";
+                    SaveSettings();
+                }
+                Say($"FemaleCharacter hand reach {(_armIk ? "on, her hands follow the player's hands and weapon" : "off")}. Use femalecharacter hands on or femalecharacter hands off");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "backpack")
+            {
+                if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
+                {
+                    _backpack = parts[1] == "on";
+                    SaveSettings();
+                    QueueAnnounce(false);
+                    UpdatePreviewBackpacks();
+                }
+                var clothing = LocalFrame() ? LocalFrame().Find("ClothingSystem") : null;
+                var found = clothing ? clothing.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(IsBackpack).Count() : 0;
+                Say($"FemaleCharacter backpack {(_backpack ? "shown" : "hidden")}. Backpack meshes found: {found}. Use femalecharacter backpack on or femalecharacter backpack off");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "wear")
@@ -272,6 +299,10 @@ public class FemaleCharacter : SonsMod
                     if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
                         SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
                 }
+                else if (key == "armik")
+                    _armIk = value != "off";
+                else if (key == "backpack")
+                    _backpack = value != "off";
                 else if (key == "wear")
                     _wear = value == "off" || value.Length == 0 ? null : value;
                 else if (key == "play")
@@ -302,7 +333,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"backpack={(_backpack ? "on" : "off")}", $"armik={(_armIk ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -474,6 +505,38 @@ public class FemaleCharacter : SonsMod
         }
     }
 
+    private static bool IsBackpack(Renderer r)
+    {
+        return r && r.gameObject.name.ToLowerInvariant().Contains("backpack");
+    }
+
+    private static void ApplyBackpack(Entry entry, bool show)
+    {
+        if (entry.ShowBackpack == show)
+            return;
+        entry.ShowBackpack = show;
+        for (int i = 0; i < entry.Hidden.Count; i++)
+        {
+            var r = entry.Hidden[i];
+            if (r && IsBackpack(r) && show)
+                r.enabled = entry.HiddenWasEnabled[i];
+        }
+    }
+
+    private static void UpdatePreviewBackpacks()
+    {
+        if (_preview?.Mannequin == null)
+            return;
+        foreach (var pair in _preview.Mannequin.Backpacks)
+        {
+            if (!pair.Value)
+                continue;
+            var on = _backpack && pair.Key && pair.Key.gameObject.activeInHierarchy;
+            if (pair.Value.gameObject.activeSelf != on)
+                pair.Value.gameObject.SetActive(on);
+        }
+    }
+
     private static string[] OutfitList(string objectName)
     {
         var parts = objectName.Split("__");
@@ -488,11 +551,13 @@ public class FemaleCharacter : SonsMod
             if (!entry.GameClothes)
             {
                 HideNew(entry);
+                ApplyBackpack(entry, !RemoteBackpack.TryGetValue(entry.NetId, out var bp) || bp);
                 var want = DesiredOutfit(entry);
                 if (want != entry.Outfit)
                     ApplyOutfit(entry, want);
             }
         }
+        UpdatePreviewBackpacks();
         if (_preview != null && !_preview.GameClothes)
         {
             var want = DesiredOutfit(_preview);
@@ -719,7 +784,8 @@ public class FemaleCharacter : SonsMod
         var race = LocalPlayer.RaceSystem;
         if (_play == null || !race)
             return "off";
-        return _wear != null ? $"{race.CurrentRace} {_wear}" : race.CurrentRace.ToString();
+        var text = _wear != null ? $"{race.CurrentRace} {_wear}" : race.CurrentRace.ToString();
+        return _backpack ? text : text + " nobackpack";
     }
 
     private static string VirginiaOutfitFor(string itemName)
@@ -813,8 +879,9 @@ public class FemaleCharacter : SonsMod
         var on = !parts[0].Equals("off", StringComparison.OrdinalIgnoreCase);
         var ask = parts.Contains("?");
         string wear = null;
+        RemoteBackpack[sender] = !parts.Contains("nobackpack");
         for (int i = 1; i < parts.Length; i++)
-            if (parts[i] != "?" && parts[i].All(c => char.IsLetterOrDigit(c) || c == '_'))
+            if (parts[i] != "?" && parts[i] != "nobackpack" && parts[i].All(c => char.IsLetterOrDigit(c) || c == '_'))
                 wear = parts[i].ToLowerInvariant();
         RemoteWear.TryGetValue(sender, out var oldWear);
         RemoteWear[sender] = wear;
@@ -1040,13 +1107,18 @@ public class FemaleCharacter : SonsMod
         var entry = new Entry { Model = model, GameClothes = gameClothes, Race = race, Frame = frame, Female = female, Mannequin = mannequin, Preview = preview };
         foreach (var name in DriveOrder)
         {
-            if (name.Contains("Hand"))
+            var isHand = name.Contains("Hand");
+            if (isHand && gameClothes)
                 continue;
             if (!rig.Offsets.TryGetValue(name, out var offset))
                 continue;
             if (!fBones.TryGetValue(name, out var f) || !pBones.TryGetValue(name, out var p))
                 continue;
-            entry.Drive.Add(new Link { Female = f, Player = p, Offset = offset });
+            var link = new Link { Female = f, Player = p, Offset = offset };
+            if (isHand)
+                entry.HandLinks.Add(link);
+            else
+                entry.Drive.Add(link);
             if (name == "Hips")
             {
                 entry.FemaleHips = f;
@@ -1058,6 +1130,16 @@ public class FemaleCharacter : SonsMod
             UnityEngine.Object.Destroy(female);
             DestroyMannequin(mannequin);
             return null;
+        }
+
+        if (!gameClothes)
+        {
+            foreach (var side in new[] { "Left", "Right" })
+            {
+                if (fBones.TryGetValue($"{side}Arm", out var fa) && fBones.TryGetValue($"{side}ForeArm", out var ff) && fBones.TryGetValue($"{side}Hand", out var fh)
+                    && pBones.TryGetValue($"{side}Hand", out var ph) && pBones.TryGetValue($"{side}ForeArm", out var pf))
+                    entry.Arms.Add(new ArmIk { Upper = fa, Lower = ff, Hand = fh, Target = ph, Pole = pf });
+            }
         }
 
         if (gameClothes)
@@ -1404,6 +1486,35 @@ public class FemaleCharacter : SonsMod
         var needed = NeededBones(frame, srcHips, withClothes);
         m.Hips = CloneBone(srcHips, m.Root.transform, m, needed);
 
+        if (!withClothes)
+        {
+            var clothing = frame.Find("ClothingSystem");
+            if (clothing)
+            {
+                foreach (var src in clothing.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if (!src || !src.sharedMesh || !IsBackpack(src) || src.bones == null)
+                        continue;
+                    var bones = src.bones;
+                    var mapped = new Transform[bones.Length];
+                    for (int i = 0; i < bones.Length; i++)
+                        mapped[i] = bones[i] && m.Bones.TryGetValue(bones[i].name, out var b) ? b : m.Hips;
+                    var go = new GameObject($"FemaleCharacter_{src.name}");
+                    go.transform.SetParent(m.Root.transform, false);
+                    var layer = LayerMask.NameToLayer("Player");
+                    if (layer >= 0)
+                        go.layer = layer;
+                    var smr = go.AddComponent<SkinnedMeshRenderer>();
+                    smr.sharedMesh = src.sharedMesh;
+                    smr.sharedMaterials = src.sharedMaterials;
+                    smr.bones = mapped;
+                    smr.rootBone = src.rootBone && m.Bones.TryGetValue(src.rootBone.name, out var rb) ? rb : m.Hips;
+                    smr.updateWhenOffscreen = true;
+                    m.Backpacks.Add(new KeyValuePair<SkinnedMeshRenderer, SkinnedMeshRenderer>(src, smr));
+                }
+            }
+        }
+
         if (withClothes)
         {
             var layer = LayerMask.NameToLayer("Player");
@@ -1558,7 +1669,7 @@ public class FemaleCharacter : SonsMod
             return;
 
         foreach (var r in entry.Hidden)
-            if (r && r.enabled)
+            if (r && r.enabled && !(entry.ShowBackpack && IsBackpack(r)))
                 r.enabled = false;
 
         var frameRotation = entry.Frame.rotation;
@@ -1572,6 +1683,16 @@ public class FemaleCharacter : SonsMod
         entry.FemaleHips.position = entry.PlayerHips.position;
 
         foreach (var link in entry.Drive)
+        {
+            if (link.Female && link.Player)
+                link.Female.rotation = link.Player.rotation * link.Offset;
+        }
+
+        if (_armIk)
+            foreach (var arm in entry.Arms)
+                SolveArm(arm);
+
+        foreach (var link in entry.HandLinks)
         {
             if (link.Female && link.Player)
                 link.Female.rotation = link.Player.rotation * link.Offset;
@@ -1593,6 +1714,39 @@ public class FemaleCharacter : SonsMod
             }
             link.Female.position = target;
         }
+    }
+
+    private static void SolveArm(ArmIk arm)
+    {
+        if (!arm.Upper || !arm.Lower || !arm.Hand || !arm.Target)
+            return;
+        var a = arm.Upper.position;
+        var b = arm.Lower.position;
+        var c = arm.Hand.position;
+        var t = arm.Target.position;
+        var lab = (b - a).magnitude;
+        var lbc = (c - b).magnitude;
+        if (lab < 1e-4f || lbc < 1e-4f)
+            return;
+        var toTarget = t - a;
+        var lat = Mathf.Clamp(toTarget.magnitude, 1e-3f, lab + lbc - 1e-3f);
+        var dir = toTarget.normalized;
+        var pole = (arm.Pole ? arm.Pole.position : b) - a;
+        var bend = pole - Vector3.Dot(pole, dir) * dir;
+        if (bend.sqrMagnitude < 1e-8f)
+        {
+            bend = (b - a) - Vector3.Dot(b - a, dir) * dir;
+            if (bend.sqrMagnitude < 1e-8f)
+                bend = Vector3.down;
+        }
+        bend.Normalize();
+        var along = (lab * lab - lbc * lbc + lat * lat) / (2f * lat);
+        var height = Mathf.Sqrt(Mathf.Max(lab * lab - along * along, 0f));
+        var elbow = a + dir * along + bend * height;
+        arm.Upper.rotation = Quaternion.FromToRotation(b - a, elbow - a) * arm.Upper.rotation;
+        b = arm.Lower.position;
+        c = arm.Hand.position;
+        arm.Lower.rotation = Quaternion.FromToRotation(c - b, (a + dir * lat) - b) * arm.Lower.rotation;
     }
 
     private static GameObject GetPrefab(string model)
@@ -1925,6 +2079,15 @@ public class FemaleCharacter : SonsMod
         public readonly Dictionary<string, Quaternion> Offsets = new();
     }
 
+    private sealed class ArmIk
+    {
+        public Transform Upper;
+        public Transform Lower;
+        public Transform Hand;
+        public Transform Target;
+        public Transform Pole;
+    }
+
     private sealed class Link
     {
         public Transform Up;
@@ -1942,6 +2105,7 @@ public class FemaleCharacter : SonsMod
         public Transform Hips;
         public readonly List<Link> Pairs = new();
         public readonly Dictionary<string, Transform> Bones = new();
+        public readonly List<KeyValuePair<SkinnedMeshRenderer, SkinnedMeshRenderer>> Backpacks = new();
     }
 
     private sealed class Entry
@@ -1954,6 +2118,7 @@ public class FemaleCharacter : SonsMod
         public string Outfit;
         public ulong NetId;
         public bool Preview;
+        public bool ShowBackpack = true;
         public readonly List<GameObject> Owned = new();
         public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
         public Mannequin Mannequin;
@@ -1964,6 +2129,8 @@ public class FemaleCharacter : SonsMod
         public Transform FemaleHips;
         public Transform PlayerHips;
         public readonly List<Link> Drive = new();
+        public readonly List<Link> HandLinks = new();
+        public readonly List<ArmIk> Arms = new();
         public readonly List<SkinnedMeshRenderer> Hidden = new();
         public readonly List<bool> HiddenWasEnabled = new();
     }
