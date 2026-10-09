@@ -126,7 +126,7 @@ public class FemaleCharacter : SonsMod
             }
             if (parts.Length >= 1 && parts[0] == "preview")
             {
-                var model = parts.Length > 1 ? parts[1] : "woman2";
+                var model = parts.Length > 1 ? parts[1] : CurrentModel();
                 SetPreview(model);
                 return;
             }
@@ -777,6 +777,16 @@ public class FemaleCharacter : SonsMod
         SyncCharacterSelect(target);
         QueueAnnounce(false);
         Say($"FemaleCharacter: playing as {Display(choice)}. Other players with the mod see you as her.");
+        if (_preview != null && _preview.Model != choice)
+            SetPreview(choice);
+    }
+
+    private static string CurrentModel()
+    {
+        if (_play != null)
+            return _play;
+        var race = LocalPlayer.RaceSystem;
+        return race ? $"woman{(int)race.CurrentRace}" : "woman0";
     }
 
     private static void SyncCharacterSelect(PlayerRace.Race race)
@@ -828,6 +838,9 @@ public class FemaleCharacter : SonsMod
         {
             _announcedRace = (int)race.CurrentRace;
             QueueAnnounce(false);
+            var now = $"woman{_announcedRace}";
+            if (_preview != null && _preview.Model != now && HasModel(now))
+                SetPreview(now);
         }
 
         if (_play != null && race.CurrentRace != RaceFor(_play))
