@@ -37,7 +37,7 @@ public static class ModChat
             var entity = LocalPlayer.Entity;
             if (!BoltNetwork.isRunning || !entity || !entity.isAttached)
                 return false;
-            var line = $"{Prefix}{mod}: {text}";
+            var line = $"{Prefix}{mod}: {text} @{entity.networkId.PackedValue}";
             var box = UnityEngine.Object.FindObjectOfType<ChatBox>();
             if (box)
             {
@@ -67,7 +67,15 @@ public static class ModChat
 
     private static void Dispatch(ulong sender, string message)
     {
-        var body = message.Substring(Prefix.Length);
+        var body = message.Substring(Prefix.Length).TrimEnd();
+        var at = body.LastIndexOf(" @", StringComparison.Ordinal);
+        if (at > 0 && ulong.TryParse(body.Substring(at + 2), out var tagged))
+        {
+            sender = tagged;
+            body = body.Substring(0, at);
+        }
+        if (sender == 0UL || sender == LocalId)
+            return;
         var colon = body.IndexOf(':');
         if (colon <= 0)
             return;
@@ -75,6 +83,7 @@ public static class ModChat
         var text = body.Substring(colon + 1).Trim();
         if (!Handlers.TryGetValue(mod, out var list))
             return;
+        RLog.Msg($"ModChat: {mod} from {sender}: {text}");
         foreach (var handler in list)
         {
             try
@@ -98,11 +107,8 @@ public static class ModChat
             try
             {
                 var sender = playerId != null && playerId.HasValue ? playerId.Value.PackedValue : 0UL;
-                if (sender != LocalId)
-                {
-                    RLog.Msg($"ModChat: received from {sender}: {message}");
+                if (sender == 0UL || sender != LocalId)
                     Dispatch(sender, message);
-                }
             }
             catch (Exception e)
             {

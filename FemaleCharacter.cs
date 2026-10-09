@@ -1908,6 +1908,23 @@ public class FemaleCharacter : SonsMod
             }
         }
 
+        if (rest.ContainsKey("Hips"))
+        {
+            var byName = new Dictionary<string, Transform>();
+            foreach (var t in hips.GetComponentsInChildren<Transform>(true))
+                byName.TryAdd(t.name, t);
+            foreach (var n in DriveOrder)
+            {
+                if (rest.ContainsKey(n) || !byName.TryGetValue(n, out var t) || !t.parent || !rest.TryGetValue(t.parent.name, out var pr))
+                    continue;
+                rest[n] = new Rest
+                {
+                    Rotation = pr.Rotation * t.localRotation,
+                    Position = pr.Position + pr.Rotation * t.localPosition
+                };
+            }
+        }
+
         var missing = DriveOrder.Where(n => !rest.ContainsKey(n)).ToList();
         RLog.Msg($"FemaleCharacter: player rest pose has {rest.Count} bones{(missing.Count > 0 ? $", missing {string.Join(" ", missing)}" : string.Empty)}");
         return rest.ContainsKey("Hips") ? rest : null;
