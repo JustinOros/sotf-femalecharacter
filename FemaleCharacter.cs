@@ -55,7 +55,7 @@ public class FemaleCharacter : SonsMod
     private static string _wear;
     private static bool _backpack;
     private static bool _armIk = true;
-    private static bool _fingers;
+    private static bool _fingers = true;
     private static readonly Dictionary<ulong, bool> RemoteBackpack = new();
     private static string _wearClothingKey;
     private static readonly Dictionary<ulong, string> RemoteWear = new();
@@ -149,6 +149,13 @@ public class FemaleCharacter : SonsMod
                 Say("FemaleCharacter: sending your character to other players");
                 return;
             }
+            if (parts.Length >= 1 && parts[0] == "dump")
+            {
+                foreach (var entry in Entries.Values)
+                    DumpRenderers(entry);
+                Say("FemaleCharacter: wrote every remote player renderer to the RedLoader log");
+                return;
+            }
             if (parts.Length >= 1 && parts[0] == "fingers")
             {
                 if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
@@ -156,7 +163,7 @@ public class FemaleCharacter : SonsMod
                     _fingers = parts[1] == "on";
                     SaveSettings();
                 }
-                Say($"FemaleCharacter fingers {(_fingers ? "copy the player's hand and finger pose" : "stay relaxed")}. Use femalecharacter fingers on or femalecharacter fingers off");
+                Say($"FemaleCharacter fingers {(_fingers ? "grip like the player's hands" : "stay relaxed")}. Use femalecharacter fingers on or femalecharacter fingers off");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "hands")
@@ -305,8 +312,8 @@ public class FemaleCharacter : SonsMod
                     if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
                         SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
                 }
-                else if (key == "fingers")
-                    _fingers = value == "on";
+                else if (key == "grip")
+                    _fingers = value != "off";
                 else if (key == "armik")
                     _armIk = value != "off";
                 else if (key == "backpack")
@@ -343,7 +350,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"fingers={(_fingers ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"grip={(_fingers ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -511,21 +518,49 @@ public class FemaleCharacter : SonsMod
             var shader = mat && mat.shader ? mat.shader.name : string.Empty;
             if (shader.Contains("TextMesh") || shader.StartsWith("UI/") || shader.Contains("Sprite") || r.gameObject.layer == 5)
                 continue;
-            var held = false;
-            foreach (var hand in entry.Hands)
-            {
-                if (hand && r.transform.IsChildOf(hand))
-                {
-                    held = true;
-                    break;
-                }
-            }
-            if (held)
+            if (IsHeld(entry, r))
                 continue;
             entry.HiddenIds.Add(r.GetInstanceID());
             entry.Hidden.Add(r);
             entry.HiddenWasEnabled.Add(r.enabled);
             r.forceRenderingOff = true;
+        }
+    }
+
+    private static bool IsHeld(Entry entry, Renderer r)
+    {
+        foreach (var hand in entry.Hands)
+            if (hand && r.transform.IsChildOf(hand))
+                return true;
+        return false;
+    }
+
+    private static void ReleaseHeld(Entry entry)
+    {
+        for (int i = entry.Hidden.Count - 1; i >= 0; i--)
+        {
+            var r = entry.Hidden[i];
+            if (!r || !IsHeld(entry, r))
+                continue;
+            r.forceRenderingOff = false;
+            entry.HiddenIds.Remove(r.GetInstanceID());
+            entry.Hidden.RemoveAt(i);
+            entry.HiddenWasEnabled.RemoveAt(i);
+        }
+    }
+
+    private static void DumpRenderers(Entry entry)
+    {
+        if (entry == null || !entry.Frame)
+            return;
+        foreach (var r in entry.Frame.GetComponentsInChildren<Renderer>(true))
+        {
+            if (!r)
+                continue;
+            var path = r.transform.name;
+            for (var t = r.transform.parent; t && t != entry.Frame; t = t.parent)
+                path = t.name + "/" + path;
+            RLog.Msg($"FemaleCharacter dump {entry.Model}: {path} active={r.gameObject.activeInHierarchy} hidden={r.forceRenderingOff} held={IsHeld(entry, r)}");
         }
     }
 
@@ -574,6 +609,7 @@ public class FemaleCharacter : SonsMod
             UpdateOutfit(entry);
             if (!entry.GameClothes)
             {
+                ReleaseHeld(entry);
                 HideNew(entry);
                 var want = DesiredOutfit(entry);
                 if (want != entry.Outfit)
@@ -1177,6 +1213,27 @@ public class FemaleCharacter : SonsMod
             {
                 if (pBones.TryGetValue($"{side}Hand", out var handBone))
                     entry.Hands.Add(handBone);
+                var grip = new HandGrip();
+                fBones.TryGetValue($"{side}Hand", out grip.Hand);
+                fBones.TryGetValue($"{side}HandMiddle1", out grip.Mid);
+                fBones.TryGetValue($"{side}HandIndex1", out grip.Index);
+                fBones.TryGetValue($"{side}HandPinky1", out grip.Pinky);
+                pBones.TryGetValue($"{side}Hand", out grip.PHand);
+                pBones.TryGetValue($"{side}HandMiddle1", out grip.PMid);
+                pBones.TryGetValue($"{side}HandIndex1", out grip.PIndex);
+                pBones.TryGetValue($"{side}HandPinky1", out grip.PPinky);
+                if (grip.Hand && grip.Mid && grip.Index && grip.Pinky && grip.PHand && grip.PMid && grip.PIndex && grip.PPinky)
+                    entry.Grips.Add(grip);
+                foreach (var finger in new[] { "Thumb", "Index", "Middle", "Ring", "Pinky" })
+                {
+                    for (int j = 1; j <= 3; j++)
+                    {
+                        var bone = $"{side}Hand{finger}{j}";
+                        var child = $"{side}Hand{finger}{j + 1}";
+                        if (fBones.TryGetValue(bone, out var fb) && fBones.TryGetValue(child, out var fc) && pBones.TryGetValue(bone, out var pb) && pBones.TryGetValue(child, out var pc))
+                            entry.Fingers.Add(new Segment { Female = fb, FemaleChild = fc, Player = pb, PlayerChild = pc });
+                    }
+                }
                 if (fBones.TryGetValue($"{side}Arm", out var fa) && fBones.TryGetValue($"{side}ForeArm", out var ff) && fBones.TryGetValue($"{side}Hand", out var fh)
                     && pBones.TryGetValue($"{side}Hand", out var ph) && pBones.TryGetValue($"{side}ForeArm", out var pf))
                     entry.Arms.Add(new ArmIk { Upper = fa, Lower = ff, Hand = fh, Target = ph, Pole = pf });
@@ -1709,7 +1766,7 @@ public class FemaleCharacter : SonsMod
             return;
 
         foreach (var r in entry.Hidden)
-            if (r && !r.forceRenderingOff)
+            if (r && !r.forceRenderingOff && !IsHeld(entry, r))
                 r.forceRenderingOff = true;
 
         var frameRotation = entry.Frame.rotation;
@@ -1732,14 +1789,11 @@ public class FemaleCharacter : SonsMod
             foreach (var arm in entry.Arms)
                 SolveArm(arm);
 
+        foreach (var grip in entry.Grips)
+            AlignHand(grip);
         if (_fingers)
-        {
-            foreach (var link in entry.HandLinks)
-            {
-                if (link.Female && link.Player)
-                    link.Female.rotation = link.Player.rotation * link.Offset;
-            }
-        }
+            foreach (var seg in entry.Fingers)
+                AlignSegment(seg);
 
         var handOffset = entry.HandAdjust;
         var headOffset = entry.HeadAdjust;
@@ -1757,6 +1811,32 @@ public class FemaleCharacter : SonsMod
             }
             link.Female.position = target;
         }
+    }
+
+    private static void AlignHand(HandGrip g)
+    {
+        if (!g.Hand || !g.Mid || !g.Index || !g.Pinky || !g.PHand || !g.PMid || !g.PIndex || !g.PPinky)
+            return;
+        var fDir = g.Mid.position - g.Hand.position;
+        var fSide = g.Index.position - g.Pinky.position;
+        var pDir = g.PMid.position - g.PHand.position;
+        var pSide = g.PIndex.position - g.PPinky.position;
+        if (fDir.sqrMagnitude < 1e-8f || fSide.sqrMagnitude < 1e-8f || pDir.sqrMagnitude < 1e-8f || pSide.sqrMagnitude < 1e-8f)
+            return;
+        var from = Quaternion.LookRotation(fDir, fSide);
+        var to = Quaternion.LookRotation(pDir, pSide);
+        g.Hand.rotation = to * Quaternion.Inverse(from) * g.Hand.rotation;
+    }
+
+    private static void AlignSegment(Segment s)
+    {
+        if (!s.Female || !s.FemaleChild || !s.Player || !s.PlayerChild)
+            return;
+        var fDir = s.FemaleChild.position - s.Female.position;
+        var pDir = s.PlayerChild.position - s.Player.position;
+        if (fDir.sqrMagnitude < 1e-10f || pDir.sqrMagnitude < 1e-10f)
+            return;
+        s.Female.rotation = Quaternion.FromToRotation(fDir, pDir) * s.Female.rotation;
     }
 
     private static void SolveArm(ArmIk arm)
@@ -2139,6 +2219,26 @@ public class FemaleCharacter : SonsMod
         public readonly Dictionary<string, Quaternion> Offsets = new();
     }
 
+    private sealed class HandGrip
+    {
+        public Transform Hand;
+        public Transform Mid;
+        public Transform Index;
+        public Transform Pinky;
+        public Transform PHand;
+        public Transform PMid;
+        public Transform PIndex;
+        public Transform PPinky;
+    }
+
+    private sealed class Segment
+    {
+        public Transform Female;
+        public Transform FemaleChild;
+        public Transform Player;
+        public Transform PlayerChild;
+    }
+
     private sealed class ArmIk
     {
         public Transform Upper;
@@ -2191,6 +2291,8 @@ public class FemaleCharacter : SonsMod
         public readonly List<Link> Drive = new();
         public readonly List<Link> HandLinks = new();
         public readonly List<ArmIk> Arms = new();
+        public readonly List<HandGrip> Grips = new();
+        public readonly List<Segment> Fingers = new();
         public readonly List<Renderer> Hidden = new();
         public readonly HashSet<int> HiddenIds = new();
         public readonly List<Transform> Hands = new();
