@@ -47,6 +47,7 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<int, Entry> Entries = new();
     private static Entry _preview;
     private static float _nextScan;
+    private static float _nextHide;
     private static UnityAction _beforeRender;
     private static bool _beforeRenderHooked;
     private static float _nextPlayerScan;
@@ -524,6 +525,7 @@ public class FemaleCharacter : SonsMod
             entry.HiddenIds.Add(r.GetInstanceID());
             entry.Hidden.Add(r);
             entry.HiddenWasEnabled.Add(r.enabled);
+            r.forceRenderingOff = true;
         }
     }
 
@@ -931,6 +933,20 @@ public class FemaleCharacter : SonsMod
         catch (Exception e)
         {
             RLog.Error($"FemaleCharacter play failed: {e.Message}");
+        }
+        if (Time.unscaledTime >= _nextHide)
+        {
+            _nextHide = Time.unscaledTime + 0.1f;
+            try
+            {
+                foreach (var entry in Entries.Values)
+                    if (!entry.GameClothes)
+                        HideNew(entry);
+            }
+            catch (Exception e)
+            {
+                RLog.Error($"FemaleCharacter hide failed: {e.Message}");
+            }
         }
         if (Time.unscaledTime < _nextScan)
             return;
@@ -1665,12 +1681,9 @@ public class FemaleCharacter : SonsMod
 
     private static void Remove(Entry entry)
     {
-        for (int i = 0; i < entry.Hidden.Count; i++)
-        {
-            var r = entry.Hidden[i];
+        foreach (var r in entry.Hidden)
             if (r)
-                r.enabled = entry.HiddenWasEnabled[i];
-        }
+                r.forceRenderingOff = false;
         if (entry.Female)
             UnityEngine.Object.Destroy(entry.Female);
         entry.Female = null;
@@ -1696,8 +1709,8 @@ public class FemaleCharacter : SonsMod
             return;
 
         foreach (var r in entry.Hidden)
-            if (r && r.enabled)
-                r.enabled = false;
+            if (r && !r.forceRenderingOff)
+                r.forceRenderingOff = true;
 
         var frameRotation = entry.Frame.rotation;
         if (entry.Mannequin != null)
