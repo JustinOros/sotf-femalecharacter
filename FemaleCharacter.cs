@@ -54,6 +54,7 @@ public class FemaleCharacter : SonsMod
     private static string _wear;
     private static bool _backpack;
     private static bool _armIk = true;
+    private static bool _fingers;
     private static readonly Dictionary<ulong, bool> RemoteBackpack = new();
     private static string _wearClothingKey;
     private static readonly Dictionary<ulong, string> RemoteWear = new();
@@ -145,6 +146,16 @@ public class FemaleCharacter : SonsMod
             {
                 QueueAnnounce(true);
                 Say("FemaleCharacter: sending your character to other players");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "fingers")
+            {
+                if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
+                {
+                    _fingers = parts[1] == "on";
+                    SaveSettings();
+                }
+                Say($"FemaleCharacter fingers {(_fingers ? "copy the player's hand and finger pose" : "stay relaxed")}. Use femalecharacter fingers on or femalecharacter fingers off");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "hands")
@@ -293,6 +304,8 @@ public class FemaleCharacter : SonsMod
                     if (rgb.Length == 3 && float.TryParse(rgb[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tr) && float.TryParse(rgb[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tg) && float.TryParse(rgb[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var tb))
                         SkinTones[key.Substring("skintone.".Length)] = new Color(tr, tg, tb, 1f);
                 }
+                else if (key == "fingers")
+                    _fingers = value == "on";
                 else if (key == "armik")
                     _armIk = value != "off";
                 else if (key == "backpack")
@@ -329,7 +342,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"fingers={(_fingers ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -1706,10 +1719,13 @@ public class FemaleCharacter : SonsMod
             foreach (var arm in entry.Arms)
                 SolveArm(arm);
 
-        foreach (var link in entry.HandLinks)
+        if (_fingers)
         {
-            if (link.Female && link.Player)
-                link.Female.rotation = link.Player.rotation * link.Offset;
+            foreach (var link in entry.HandLinks)
+            {
+                if (link.Female && link.Player)
+                    link.Female.rotation = link.Player.rotation * link.Offset;
+            }
         }
 
         var handOffset = entry.HandAdjust;

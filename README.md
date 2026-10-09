@@ -54,6 +54,7 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 | `femalecharacter wear v_dress` | Wear an outfit by name: base, tactical, hoodie, oldjacket, leatherjacket, puffyjacket, tuxedo, pyjamas, wetsuit, spacesuit, priest, flightattendant, goldenarmour, v_camosuit, v_dress, v_leathersuit, v_tracksuit, v_swimsuit |
 | `femalecharacter wear auto` | Follow your game clothing again |
 | `femalecharacter hands on` / `off` | Her hands follow the player's real hand positions so they line up with held weapons and tools (default on) |
+| `femalecharacter fingers on` / `off` | Copy the player's wrist and finger pose onto the woman (default off, her hands stay relaxed) |
 | `femalecharacter announce` | Send your character to other players again, for example after someone joins |
 | `femalecharacter preview woman2` | Show Woman2 in front of you copying your movement and outfit, for testing without another player |
 | `femalecharacter preview off` | Remove the preview |
