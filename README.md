@@ -1,23 +1,23 @@
 # sotf-femalecharacter
 
-A client side RedLoader mod for Sons of the Forest that lets players opt in to be shown as a female character. Each race slot has its own woman, named after the slot number.
+A client side RedLoader mod for Sons of the Forest that shows players who have the mod as female characters. Each race slot has its own woman, named after the slot number.
 
-| Race slot | Woman | Model |
+| Race slot | Woman | Hair |
 |---|---|---|
-| White (0) | Woman0 | not made yet |
-| Black (1) | Woman1 | not made yet |
-| Latin (2) | Woman2 | ready |
-| Asian (3) | Woman3 | not made yet |
-| BlackA (4) | Woman4 | not made yet |
-| WhiteA (5) | Woman5 | not made yet |
-| BlackB (6) | Woman6 | ready |
-| LatinA (7) | Woman7 | not made yet |
+| White (0) | Woman0 | blonde |
+| Black (1) | Woman1 | black hair |
+| Latin (2) | Woman2 | black hair |
+| Asian (3) | Woman3 | black hair |
+| BlackA (4) | Woman4 | Asian, blonde |
+| WhiteA (5) | Woman5 | black hair |
+| BlackB (6) | Woman6 | blonde |
+| LatinA (7) | Woman7 | blonde |
 
-Choose your character in the console with `femalecharacter woman2`, `femalecharacter woman6` or `femalecharacter off`. The choice is saved and applied every time you load in. [sotf-character-select](https://github.com/JustinOros/sotf-character-select) also works, and the two mods stay in sync.
+Installing the mod is all you need. You are shown as the woman for your race slot, so pick the slot you want in the game or with [sotf-character-select](https://github.com/JustinOros/sotf-character-select). You can also switch with `femalecharacter woman2` and so on, or turn it off with `femalecharacter off`.
 
-Only players who opt in with a `femalecharacter woman` command are shown as women. Anyone else using the same race slot still shows as the normal male character. Players without the mod always see the normal male characters, so nothing breaks for them.
+Players who turn it off with `femalecharacter off` still show as the normal male character for their slot. Players without the mod always see the normal male characters, so nothing breaks for them.
 
-## How opt in works
+## How it works
 
 When you load in or change character, the mod sends a short chat line such as `[mod] FemaleCharacter: BlackB`. Every player with one of these mods hides lines that start with `[mod]` and reads them instead. Players without the mod see these lines in chat.
 
@@ -47,13 +47,15 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 | Command | What it does |
 |---|---|
 | `femalecharacter woman2` | Play as Woman2 (saved). Works for any slot that has a model |
-| `femalecharacter off` | Go back to the character you had before |
+| `femalecharacter off` | Show as the normal male character to other players (saved) |
+| `femalecharacter on` | Show as the woman for your race slot again (default) |
 | `femalecharacter` | Show status |
 | `femalecharacter wear` | Show the outfit you are wearing |
 | `femalecharacter wear v_dress` | Wear an outfit by name: base, tactical, hoodie, oldjacket, leatherjacket, puffyjacket, tuxedo, pyjamas, wetsuit, spacesuit, priest, flightattendant, goldenarmour, v_camosuit, v_dress, v_leathersuit, v_tracksuit, v_swimsuit |
 | `femalecharacter wear auto` | Follow your game clothing again |
 | `femalecharacter backpack on` / `off` | Show or hide your backpack on your woman (saved, other players with the mod see your choice) |
 | `femalecharacter hands on` / `off` | Her hands follow the player's real hand positions so they line up with held weapons and tools (default on) |
+| `femalecharacter announce` | Send your character to other players again, for example after someone joins |
 | `femalecharacter preview woman2` | Show Woman2 in front of you copying your movement and outfit, for testing without another player |
 | `femalecharacter preview off` | Remove the preview |
 

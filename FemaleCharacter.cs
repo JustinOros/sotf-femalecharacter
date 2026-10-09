@@ -67,6 +67,8 @@ public class FemaleCharacter : SonsMod
     private static readonly Dictionary<string, float> OutfitHead = new();
     private static bool _neckFiller = true;
     private static string _play;
+    private static bool _female = true;
+    private static int _announcedRace = -1;
     private static int _prevRace = -1;
     private static bool _spawnApplied = true;
     private static float _spawnApplyAt;
@@ -106,7 +108,7 @@ public class FemaleCharacter : SonsMod
         LoadSettings();
         ModChat.On(ChatName, OnAnnounce);
         _spawnApplied = false;
-        RLog.Msg($"FemaleCharacter loaded. Playing as: {_play ?? "off"}. Woman0 to Woman7 match race slots 0 to 7. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [woman0-woman7|off|status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview woman0-woman7|preview off]");
+        RLog.Msg($"FemaleCharacter loaded. Female: {(_female ? "on" : "off")}. Woman0 to Woman7 match race slots 0 to 7. Clothes: {(_gameClothes ? "game" : "own")}. Command: femalecharacter [on|off|woman0-woman7|status|clothes own|clothes game|handoffset <model> <meters>|headoffset <model> <meters>|outfit|hand <meters>|head <meters>|fillers on|off|fillers neck on|off|fillers arms on|off|skintone <r> <g> <b>|preview woman0-woman7|preview off]");
     }
 
     [DebugCommand("femalecharacter")]
@@ -115,7 +117,7 @@ public class FemaleCharacter : SonsMod
         try
         {
             var parts = (args ?? string.Empty).Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 1 && (IsModel(parts[0]) || parts[0] == "off"))
+            if (parts.Length == 1 && (IsModel(parts[0]) || parts[0] == "off" || parts[0] == "on"))
             {
                 Play(parts[0]);
                 return;
@@ -137,6 +139,12 @@ public class FemaleCharacter : SonsMod
                 SaveSettings();
                 RebuildAll();
                 Say($"FemaleCharacter clothes: {(_gameClothes ? "game clothing" : "her own outfit")}");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "announce")
+            {
+                QueueAnnounce(true);
+                Say("FemaleCharacter: sending your character to other players");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "hands")
@@ -305,6 +313,8 @@ public class FemaleCharacter : SonsMod
                     _backpack = value != "off";
                 else if (key == "wear")
                     _wear = value == "off" || value.Length == 0 ? null : value;
+                else if (key == "female")
+                    _female = value != "off";
                 else if (key == "play")
                     _play = IsModel(value) ? value : null;
                 else if (key == "prevrace" && int.TryParse(value, out var pr))
@@ -333,7 +343,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"backpack={(_backpack ? "on" : "off")}", $"armik={(_armIk ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"backpack={(_backpack ? "on" : "off")}", $"armik={(_armIk ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -694,16 +704,13 @@ public class FemaleCharacter : SonsMod
             return;
         }
 
-        if (choice == "off")
+        if (choice == "off" || choice == "on")
         {
-            var restore = _prevRace >= 0 ? (PlayerRace.Race)_prevRace : PlayerRace.Race.White;
+            _female = choice == "on";
             _play = null;
-            _prevRace = -1;
-            race.ApplyRace(restore);
             SaveSettings();
-            SyncCharacterSelect(restore);
             QueueAnnounce(false);
-            Say($"FemaleCharacter: off, back to {restore}");
+            Say(_female ? $"FemaleCharacter: on, other players with the mod see you as {Display($"woman{(int)race.CurrentRace}")}" : "FemaleCharacter: off, other players see your normal male character");
             return;
         }
 
@@ -713,9 +720,7 @@ public class FemaleCharacter : SonsMod
             return;
         }
 
-        var current = race.CurrentRace;
-        if (_play == null)
-            _prevRace = (int)current;
+        _female = true;
         _play = choice;
         var target = RaceFor(choice);
         race.ApplyRace(target);
@@ -765,8 +770,15 @@ public class FemaleCharacter : SonsMod
                 RLog.Msg($"FemaleCharacter: applied saved character {_play}");
             }
             OptedIn.Clear();
+            _announcedRace = (int)race.CurrentRace;
             QueueAnnounce(true);
             return;
+        }
+
+        if ((int)race.CurrentRace != _announcedRace)
+        {
+            _announcedRace = (int)race.CurrentRace;
+            QueueAnnounce(false);
         }
 
         if (_play != null && race.CurrentRace != RaceFor(_play))
@@ -782,7 +794,7 @@ public class FemaleCharacter : SonsMod
     private static string AnnounceText()
     {
         var race = LocalPlayer.RaceSystem;
-        if (_play == null || !race)
+        if (!_female || !race)
             return "off";
         var text = _wear != null ? $"{race.CurrentRace} {_wear}" : race.CurrentRace.ToString();
         return _backpack ? text : text + " nobackpack";
@@ -808,7 +820,7 @@ public class FemaleCharacter : SonsMod
 
     private static void TickWear()
     {
-        if (_play == null && _preview == null && _wear == null)
+        if (!_female && _preview == null && _wear == null)
             return;
         var inventory = LocalPlayer.Inventory;
         if (!inventory)
@@ -894,7 +906,7 @@ public class FemaleCharacter : SonsMod
             _nextPlayerScan = 0f;
             RLog.Msg($"FemaleCharacter: player {sender} {(on ? $"opted in as {parts[0]}" : "opted out")}");
         }
-        if (ask && _play != null)
+        if (ask && _female)
             QueueAnnounce(false);
     }
 
