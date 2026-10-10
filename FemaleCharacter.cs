@@ -57,6 +57,7 @@ public class FemaleCharacter : SonsMod
     private static bool _armIk = true;
     private static bool _fingers = true;
     private static bool _selfOn = true;
+    private static bool _gameShader;
     private static Entry _self;
     private static float _nextSelf;
     private static readonly Dictionary<ulong, bool> RemoteBackpack = new();
@@ -161,6 +162,18 @@ public class FemaleCharacter : SonsMod
             {
                 QueueAnnounce(true);
                 Say("FemaleCharacter: sending your character to other players");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "shader")
+            {
+                if (parts.Length >= 2 && (parts[1] == "game" || parts[1] == "hdrp"))
+                {
+                    _gameShader = parts[1] == "game";
+                    SaveSettings();
+                    Say($"FemaleCharacter: skin shader set to {parts[1]}, restart the game to apply");
+                    return;
+                }
+                Say($"FemaleCharacter skin shader {(_gameShader ? "game" : "hdrp")}, base {(_litBase ? _litBase.name : "none")}. Use femalecharacter shader hdrp or femalecharacter shader game");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "matdump")
@@ -353,6 +366,8 @@ public class FemaleCharacter : SonsMod
                     _fingers = value != "off";
                 else if (key == "self")
                     _selfOn = value != "off";
+                else if (key == "shader")
+                    _gameShader = value == "game";
                 else if (key == "armik")
                     _armIk = value != "off";
                 else if (key == "backpack")
@@ -389,7 +404,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"grip={(_fingers ? "on" : "off")}", $"self={(_selfOn ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"grip={(_fingers ? "on" : "off")}", $"self={(_selfOn ? "on" : "off")}", $"shader={(_gameShader ? "game" : "hdrp")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -2457,6 +2472,17 @@ public class FemaleCharacter : SonsMod
     {
         if (_litBase && _hairBase)
             return;
+        if (!_litBase && !_gameShader)
+        {
+            var hdrp = Shader.Find("HDRP/Lit");
+            if (hdrp)
+            {
+                _litBase = new Material(hdrp) { name = "FC_HDRPLit" };
+                _litBase.EnableKeyword("_NORMALMAP_TANGENT_SPACE");
+                _litBase.EnableKeyword("_DISABLE_SSR_TRANSPARENT");
+                _litBase.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            }
+        }
         foreach (var m in Resources.FindObjectsOfTypeAll<Material>())
         {
             if (!m || !m.shader)
@@ -2541,6 +2567,8 @@ public class FemaleCharacter : SonsMod
             ClearExtraTextures(m);
         SetFloat(m, "_SupportDecals", 0f);
         m.EnableKeyword("_DISABLE_DECALS");
+        if (m.HasProperty("_Color"))
+            m.SetColor("_Color", Color.white);
         Converted[src.GetInstanceID()] = m;
         return m;
     }
