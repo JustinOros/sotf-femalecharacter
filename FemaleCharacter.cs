@@ -567,7 +567,7 @@ public class FemaleCharacter : SonsMod
         _nextSelf = Time.unscaledTime + 0.25f;
         var race = LocalPlayer.RaceSystem;
         var model = race ? CurrentModel() : null;
-        var want = _female && _selfOn && !_gameClothes && race && EnsureReady() && model != null && HasModel(model);
+        var want = _female && _selfOn && race && EnsureReady() && model != null && HasModel(model);
         if (!want)
         {
             if (_self != null)
@@ -584,6 +584,14 @@ public class FemaleCharacter : SonsMod
             _self = Create(race, model, false);
             if (_self == null)
                 return;
+            if (_self.GameClothes)
+            {
+                Remove(_self);
+                _self = null;
+                _selfOn = false;
+                RLog.Warning("FemaleCharacter: first person needs the mod's own outfits, turned off");
+                return;
+            }
             _self.Self = true;
             var bones = BoneMap(_self.Female.transform);
             if (bones.TryGetValue("Head", out var head))
