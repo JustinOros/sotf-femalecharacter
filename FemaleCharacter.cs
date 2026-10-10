@@ -153,7 +153,9 @@ public class FemaleCharacter : SonsMod
             {
                 foreach (var entry in Entries.Values)
                     DumpRenderers(entry);
-                Say("FemaleCharacter: wrote every remote player renderer to the RedLoader log");
+                if (_preview != null)
+                    DumpRenderers(_preview);
+                Say("FemaleCharacter: wrote every player renderer to the RedLoader log");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "fingers")
@@ -1600,6 +1602,22 @@ public class FemaleCharacter : SonsMod
         };
         var needed = NeededBones(frame, srcHips, withClothes);
         m.Hips = CloneBone(srcHips, m.Root.transform, m, needed);
+        foreach (var name in new[] { "LeftHand", "RightHand", "WeaponRoot" })
+        {
+            var src = FindDeep(srcHips, name);
+            Transform dst = null;
+            if (src && name == "WeaponRoot" && src.parent && m.Bones.TryGetValue(src.parent.name, out var parentBone))
+            {
+                var go = new GameObject("WeaponRoot");
+                dst = go.transform;
+                dst.SetParent(parentBone, false);
+                m.Extra.Add(new Link { Player = src, Female = dst });
+            }
+            else if (src)
+                m.Bones.TryGetValue(name, out dst);
+            if (src && dst)
+                m.HeldAnchors.Add(new Link { Player = src, Female = dst });
+        }
 
         if (!withClothes)
         {
@@ -1719,11 +1737,92 @@ public class FemaleCharacter : SonsMod
         return t;
     }
 
+    private static void ScanHeld(Mannequin m)
+    {
+        var layer = LayerMask.NameToLayer("Player");
+        foreach (var anchor in m.HeldAnchors)
+        {
+            if (!anchor.Player || !anchor.Female)
+                continue;
+            foreach (var r in anchor.Player.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!r || m.HeldIds.Contains(r.GetInstanceID()))
+                    continue;
+                var smr = r.TryCast<SkinnedMeshRenderer>();
+                Mesh mesh = null;
+                if (smr)
+                    mesh = smr.sharedMesh;
+                else if (r.TryCast<MeshRenderer>())
+                {
+                    var mf = r.GetComponent<MeshFilter>();
+                    mesh = mf ? mf.sharedMesh : null;
+                }
+                if (!mesh)
+                    continue;
+                m.HeldIds.Add(r.GetInstanceID());
+                var go = new GameObject($"FemaleCharacter_Held_{r.name}");
+                go.transform.SetParent(m.Root.transform, false);
+                if (layer >= 0)
+                    go.layer = layer;
+                var filter = go.AddComponent<MeshFilter>();
+                var copy = go.AddComponent<MeshRenderer>();
+                copy.sharedMaterials = r.sharedMaterials;
+                copy.shadowCastingMode = ShadowCastingMode.On;
+                var held = new HeldCopy { Src = r, Skinned = smr, SrcAnchor = anchor.Player, DstAnchor = anchor.Female, Go = go, Filter = filter };
+                if (smr)
+                {
+                    held.Baked = new Mesh();
+                    filter.sharedMesh = held.Baked;
+                }
+                else
+                    filter.sharedMesh = mesh;
+                go.SetActive(false);
+                m.Held.Add(held);
+            }
+        }
+    }
+
+    private static void UpdateHeld(Mannequin m)
+    {
+        if (Time.unscaledTime >= m.NextHeldScan)
+        {
+            m.NextHeldScan = Time.unscaledTime + 0.25f;
+            ScanHeld(m);
+        }
+        foreach (var h in m.Held)
+        {
+            if (!h.Go)
+                continue;
+            var show = h.Src && h.Src.enabled && h.Src.gameObject.activeInHierarchy && h.SrcAnchor && h.DstAnchor;
+            if (h.Go.activeSelf != show)
+                h.Go.SetActive(show);
+            if (!show)
+                continue;
+            var t = h.Src.transform;
+            var relRot = Quaternion.Inverse(h.SrcAnchor.rotation) * t.rotation;
+            var relPos = h.SrcAnchor.InverseTransformPoint(t.position);
+            h.Go.transform.SetPositionAndRotation(h.DstAnchor.TransformPoint(relPos), h.DstAnchor.rotation * relRot);
+            var parentScale = m.Root.transform.lossyScale;
+            var ls = t.lossyScale;
+            h.Go.transform.localScale = new Vector3(ls.x / Mathf.Max(parentScale.x, 1e-4f), ls.y / Mathf.Max(parentScale.y, 1e-4f), ls.z / Mathf.Max(parentScale.z, 1e-4f));
+            if (h.Skinned && h.Baked)
+                h.Skinned.BakeMesh(h.Baked);
+        }
+    }
+
     private static void UpdateMannequin(Mannequin m)
     {
         if (!m.SrcRoot || !m.SrcHips)
             return;
         foreach (var pair in m.Pairs)
+        {
+            if (!pair.Player || !pair.Female)
+                continue;
+            pair.Female.localPosition = pair.Player.localPosition;
+            pair.Female.localRotation = pair.Player.localRotation;
+            pair.Female.localScale = pair.Player.localScale;
+        }
+        foreach (var pair in m.Extra)
         {
             if (!pair.Player || !pair.Female)
                 continue;
@@ -1743,11 +1842,18 @@ public class FemaleCharacter : SonsMod
             forward = Vector3.forward;
         var desired = m.SrcHips.position + forward.normalized * 2.5f;
         root.position += desired - m.Hips.position;
+        UpdateHeld(m);
     }
 
     private static void DestroyMannequin(Mannequin m)
     {
-        if (m != null && m.Root)
+        if (m == null)
+            return;
+        foreach (var h in m.Held)
+            if (h.Baked)
+                UnityEngine.Object.Destroy(h.Baked);
+        m.Held.Clear();
+        if (m.Root)
             UnityEngine.Object.Destroy(m.Root);
     }
 
@@ -2281,6 +2387,22 @@ public class FemaleCharacter : SonsMod
         public readonly List<Link> Pairs = new();
         public readonly Dictionary<string, Transform> Bones = new();
         public readonly List<KeyValuePair<SkinnedMeshRenderer, SkinnedMeshRenderer>> Backpacks = new();
+        public readonly List<Link> HeldAnchors = new();
+        public readonly List<Link> Extra = new();
+        public readonly List<HeldCopy> Held = new();
+        public readonly HashSet<int> HeldIds = new();
+        public float NextHeldScan;
+    }
+
+    private sealed class HeldCopy
+    {
+        public Renderer Src;
+        public SkinnedMeshRenderer Skinned;
+        public Transform SrcAnchor;
+        public Transform DstAnchor;
+        public GameObject Go;
+        public MeshFilter Filter;
+        public Mesh Baked;
     }
 
     private sealed class Entry
