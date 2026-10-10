@@ -114,6 +114,7 @@ public class FemaleCharacter : SonsMod
         {
             _beginCamera = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<ScriptableRenderContext, Camera>>(new Action<ScriptableRenderContext, Camera>(OnBeginCamera));
             RenderPipelineManager.add_beginCameraRendering(_beginCamera);
+            _cameraHooked = true;
             RLog.Msg("FemaleCharacter: hooked camera rendering, first person follows aiming");
         }
         catch (Exception e)
@@ -160,6 +161,11 @@ public class FemaleCharacter : SonsMod
             {
                 QueueAnnounce(true);
                 Say("FemaleCharacter: sending your character to other players");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "matdump")
+            {
+                MatDump();
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "fpdump")
@@ -669,6 +675,81 @@ public class FemaleCharacter : SonsMod
         for (var p = t.parent; p && p != stop; p = p.parent)
             path = p.name + "/" + path;
         return path;
+    }
+
+    private static void DescribeMaterial(List<string> lines, string label, Material m)
+    {
+        if (!m)
+        {
+            lines.Add($"== {label}: none");
+            return;
+        }
+        lines.Add($"== {label}: {m.name} shader={(m.shader ? m.shader.name : "")} queue={m.renderQueue}");
+        lines.Add($"keywords: {string.Join(" ", m.shaderKeywords)}");
+        var shader = m.shader;
+        if (!shader)
+            return;
+        for (int i = 0; i < shader.GetPropertyCount(); i++)
+        {
+            var name = shader.GetPropertyName(i);
+            var type = shader.GetPropertyType(i);
+            string value;
+            switch (type)
+            {
+                case ShaderPropertyType.Texture:
+                    var t = m.GetTexture(name);
+                    value = t ? t.name : "null";
+                    break;
+                case ShaderPropertyType.Color:
+                    value = m.GetColor(name).ToString();
+                    break;
+                case ShaderPropertyType.Vector:
+                    value = m.GetVector(name).ToString();
+                    break;
+                default:
+                    value = m.GetFloat(name).ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+            }
+            lines.Add($"{name} {type} = {value}");
+        }
+    }
+
+    private static void MatDump()
+    {
+        var lines = new List<string>();
+        DescribeMaterial(lines, "lit base", _litBase);
+        DescribeMaterial(lines, "hair base", _hairBase);
+        var race = LocalPlayer.RaceSystem;
+        if (race)
+        {
+            var frame = race.transform.parent ? race.transform.parent : race.transform;
+            foreach (var r in frame.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (r && r.gameObject.activeInHierarchy && (r.name.Contains("HandTrim") || r.name == "Head"))
+                {
+                    DescribeMaterial(lines, $"player {r.name}", r.sharedMaterial);
+                    break;
+                }
+            }
+        }
+        var who = _self ?? _preview;
+        if (who != null && who.Female)
+        {
+            foreach (var r in who.Female.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (r && r.gameObject.activeInHierarchy && r.name.StartsWith("body__"))
+                {
+                    DescribeMaterial(lines, $"woman {r.name}", r.sharedMaterial);
+                    var mpb = new MaterialPropertyBlock();
+                    r.GetPropertyBlock(mpb);
+                    lines.Add($"propertyblock empty={mpb.isEmpty} renderingLayerMask={r.renderingLayerMask}");
+                    break;
+                }
+            }
+        }
+        var file = Path.Combine(LoaderEnvironment.UserDataDirectory, "matdump.txt");
+        File.WriteAllLines(file, lines);
+        Say($"FemaleCharacter: wrote {lines.Count} lines to {file}");
     }
 
     private static void FpDump()
@@ -1182,13 +1263,17 @@ public class FemaleCharacter : SonsMod
 
     private static Il2CppSystem.Action<ScriptableRenderContext, Camera> _beginCamera;
     private static int _lastCameraDrive = -1;
+    private static bool _cameraHooked;
+    private static bool _fromCamera;
 
     private static void OnBeginCamera(ScriptableRenderContext context, Camera camera)
     {
         if (_lastCameraDrive == Time.frameCount)
             return;
         _lastCameraDrive = Time.frameCount;
+        _fromCamera = true;
         DriveAll();
+        _fromCamera = false;
     }
 
     private static void OnLateUpdate()
@@ -1206,7 +1291,7 @@ public class FemaleCharacter : SonsMod
                 Drive(entry);
             if (_preview != null)
                 Drive(_preview);
-            if (_self != null)
+            if (_self != null && (_fromCamera || !_cameraHooked))
             {
                 Drive(_self);
                 if (_self.SelfHead)
