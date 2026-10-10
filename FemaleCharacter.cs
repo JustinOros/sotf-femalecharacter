@@ -2182,6 +2182,8 @@ public class FemaleCharacter : SonsMod
         b = arm.Lower.position;
         c = arm.Hand.position;
         arm.Lower.rotation = Quaternion.FromToRotation(c - b, (a + dir * lat) - b) * arm.Lower.rotation;
+        if ((arm.Hand.position - t).sqrMagnitude > 1e-6f)
+            arm.Hand.position = t;
     }
 
     private static GameObject GetPrefab(string model)
@@ -2450,8 +2452,37 @@ public class FemaleCharacter : SonsMod
             }
         }
 
+        if (!(isHair && _hairBase))
+            ClearExtraTextures(m);
         Converted[src.GetInstanceID()] = m;
         return m;
+    }
+
+    private static readonly HashSet<string> KeptTextures = new() { "_BaseColorMap", "_MainTex", "_NormalMap", "_MaskMap" };
+    private static bool _loggedCleared;
+
+    private static void ClearExtraTextures(Material m)
+    {
+        try
+        {
+            var cleared = new List<string>();
+            foreach (var prop in m.GetTexturePropertyNames())
+            {
+                if (KeptTextures.Contains(prop) || !m.GetTexture(prop))
+                    continue;
+                cleared.Add($"{prop}={m.GetTexture(prop).name}");
+                m.SetTexture(prop, null);
+            }
+            if (!_loggedCleared && cleared.Count > 0)
+            {
+                _loggedCleared = true;
+                RLog.Msg($"FemaleCharacter: cleared base material textures {string.Join(", ", cleared)}; keywords {string.Join(" ", m.shaderKeywords)}");
+            }
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not clear base textures: {e.Message}");
+        }
     }
 
     private static void SetFloat(Material m, string prop, float value)
