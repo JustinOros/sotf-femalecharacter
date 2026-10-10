@@ -1289,7 +1289,7 @@ public class FemaleCharacter : SonsMod
         {
             foreach (var entry in Entries.Values)
                 Drive(entry);
-            if (_preview != null)
+            if (_preview != null && (_fromCamera || !_cameraHooked))
                 Drive(_preview);
             if (_self != null && (_fromCamera || !_cameraHooked))
             {
@@ -2539,6 +2539,8 @@ public class FemaleCharacter : SonsMod
 
         if (!(isHair && _hairBase))
             ClearExtraTextures(m);
+        SetFloat(m, "_SupportDecals", 0f);
+        m.EnableKeyword("_DISABLE_DECALS");
         Converted[src.GetInstanceID()] = m;
         return m;
     }
