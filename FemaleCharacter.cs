@@ -149,6 +149,11 @@ public class FemaleCharacter : SonsMod
                 Say("FemaleCharacter: sending your character to other players");
                 return;
             }
+            if (parts.Length >= 1 && parts[0] == "fpdump")
+            {
+                FpDump();
+                return;
+            }
             if (parts.Length >= 1 && parts[0] == "dump")
             {
                 foreach (var entry in Entries.Values)
@@ -564,6 +569,70 @@ public class FemaleCharacter : SonsMod
                 path = t.name + "/" + path;
             RLog.Msg($"FemaleCharacter dump {entry.Model}: {path} active={r.gameObject.activeInHierarchy} hidden={r.forceRenderingOff} held={IsHeld(entry, r)}");
         }
+    }
+
+    private static string PathOf(Transform t, Transform stop)
+    {
+        var path = t.name;
+        for (var p = t.parent; p && p != stop; p = p.parent)
+            path = p.name + "/" + path;
+        return path;
+    }
+
+    private static void FpDump()
+    {
+        var race = LocalPlayer.RaceSystem;
+        if (!race)
+        {
+            Say("FemaleCharacter: load into a game first");
+            return;
+        }
+        var lines = new List<string>();
+        var roots = new List<Transform> { race.transform.root };
+        var cam = Camera.main;
+        if (cam && cam.transform.root != race.transform.root)
+            roots.Add(cam.transform.root);
+        lines.Add($"camera={(cam ? PathOf(cam.transform, null) : "none")} fov={(cam ? cam.fieldOfView : 0f):F1} near={(cam ? cam.nearClipPlane : 0f):F3} mask={(cam ? cam.cullingMask : 0)}");
+        var held = LocalPlayer.Inventory ? LocalPlayer.Inventory.RightHandItem : null;
+        lines.Add($"righthand={(held != null && held.Data != null ? held.Data.Name : "none")}");
+        for (int i = 0; i < 32; i++)
+        {
+            var n = LayerMask.LayerToName(i);
+            if (!string.IsNullOrEmpty(n))
+                lines.Add($"layer {i} {n}");
+        }
+        var boneSets = new HashSet<string>();
+        foreach (var root in roots)
+        {
+            lines.Add($"== root {root.name}");
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            {
+                var depth = 0;
+                for (var p = t.parent; p && p != root; p = p.parent)
+                    depth++;
+                if (depth <= 3)
+                    lines.Add($"T {PathOf(t, root)} active={t.gameObject.activeInHierarchy} layer={t.gameObject.layer}");
+            }
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (!r)
+                    continue;
+                var smr = r.TryCast<SkinnedMeshRenderer>();
+                var mf = smr ? null : r.GetComponent<MeshFilter>();
+                var mesh = smr ? smr.sharedMesh : mf ? mf.sharedMesh : null;
+                var mats = string.Join(",", r.sharedMaterials.Select(m => m ? m.name + ":" + (m.shader ? m.shader.name : "") : "null"));
+                lines.Add($"R {PathOf(r.transform, root)} type={r.GetIl2CppType().Name} active={r.gameObject.activeInHierarchy} enabled={r.enabled} off={r.forceRenderingOff} layer={r.gameObject.layer} shadow={r.shadowCastingMode} mesh={(mesh ? mesh.name : "none")} verts={(mesh ? mesh.vertexCount : 0)} root={(smr && smr.rootBone ? PathOf(smr.rootBone, root) : "")} mats={mats}");
+                if (smr && smr.bones != null && smr.bones.Length > 0)
+                {
+                    var names = string.Join(",", smr.bones.Select(b => b ? b.name : "null"));
+                    if (boneSets.Add(names))
+                        lines.Add($"B {PathOf(r.transform, root)} bones={names}");
+                }
+            }
+        }
+        var file = Path.Combine(LoaderEnvironment.UserDataDirectory, "fpdump.txt");
+        File.WriteAllLines(file, lines);
+        Say($"FemaleCharacter: wrote {lines.Count} lines to {file}");
     }
 
     private static bool IsBackpack(Renderer r)
