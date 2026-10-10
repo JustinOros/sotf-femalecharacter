@@ -110,6 +110,16 @@ public class FemaleCharacter : SonsMod
         {
             RLog.Warning($"FemaleCharacter: could not hook onBeforeRender, using LateUpdate only: {e.Message}");
         }
+        try
+        {
+            _beginCamera = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<ScriptableRenderContext, Camera>>(new Action<ScriptableRenderContext, Camera>(OnBeginCamera));
+            RenderPipelineManager.add_beginCameraRendering(_beginCamera);
+            RLog.Msg("FemaleCharacter: hooked camera rendering, first person follows aiming");
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not hook camera rendering: {e.Message}");
+        }
         LoadSettings();
         ModChat.On(ChatName, OnAnnounce);
         _spawnApplied = false;
@@ -1168,6 +1178,17 @@ public class FemaleCharacter : SonsMod
         {
             RLog.Error($"FemaleCharacter scan failed: {e.Message}");
         }
+    }
+
+    private static Il2CppSystem.Action<ScriptableRenderContext, Camera> _beginCamera;
+    private static int _lastCameraDrive = -1;
+
+    private static void OnBeginCamera(ScriptableRenderContext context, Camera camera)
+    {
+        if (_lastCameraDrive == Time.frameCount)
+            return;
+        _lastCameraDrive = Time.frameCount;
+        DriveAll();
     }
 
     private static void OnLateUpdate()

@@ -3,7 +3,7 @@
   "id": "FemaleCharacter",
   "name": "FemaleCharacter",
   "author": "JustinOros",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "description": "Lets players opt in to be shown as a female character for their race slot (Woman0 to Woman7) to other players with the mod",
   "gameVersion": "1.0.0",
   "platform": "Client",
