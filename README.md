@@ -55,6 +55,7 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 | `femalecharacter wear auto` | Follow your game clothing again |
 | `femalecharacter hands on` / `off` | Her hands follow the player's real hand positions so they line up with held weapons and tools (default on) |
 | `femalecharacter fingers on` / `off` | Her fingers curl around held items like the player's (default on). Her wrists always turn like the player's |
+| `femalecharacter self on` / `off` | In first person you see your woman's arms, hands and outfit instead of the male ones (default on) |
 | `femalecharacter dump` | Write every renderer on other players to the RedLoader log, for bug reports |
 | `femalecharacter announce` | Send your character to other players again, for example after someone joins |
 | `femalecharacter preview woman2` | Show Woman2 in front of you copying your movement and outfit, for testing without another player |

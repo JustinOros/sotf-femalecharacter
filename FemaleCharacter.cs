@@ -56,6 +56,9 @@ public class FemaleCharacter : SonsMod
     private static bool _backpack;
     private static bool _armIk = true;
     private static bool _fingers = true;
+    private static bool _selfOn = true;
+    private static Entry _self;
+    private static float _nextSelf;
     private static readonly Dictionary<ulong, bool> RemoteBackpack = new();
     private static string _wearClothingKey;
     private static readonly Dictionary<ulong, string> RemoteWear = new();
@@ -171,6 +174,17 @@ public class FemaleCharacter : SonsMod
                     SaveSettings();
                 }
                 Say($"FemaleCharacter fingers {(_fingers ? "grip like the player's hands" : "stay relaxed")}. Use femalecharacter fingers on or femalecharacter fingers off");
+                return;
+            }
+            if (parts.Length >= 1 && parts[0] == "self")
+            {
+                if (parts.Length >= 2 && (parts[1] == "on" || parts[1] == "off"))
+                {
+                    _selfOn = parts[1] == "on";
+                    SaveSettings();
+                    _nextSelf = 0f;
+                }
+                Say($"FemaleCharacter first person {(_selfOn ? "on, you see your woman's arms and outfit" : "off, you see the normal arms")}. Use femalecharacter self on or femalecharacter self off");
                 return;
             }
             if (parts.Length >= 1 && parts[0] == "hands")
@@ -321,6 +335,8 @@ public class FemaleCharacter : SonsMod
                 }
                 else if (key == "grip")
                     _fingers = value != "off";
+                else if (key == "self")
+                    _selfOn = value != "off";
                 else if (key == "armik")
                     _armIk = value != "off";
                 else if (key == "backpack")
@@ -357,7 +373,7 @@ public class FemaleCharacter : SonsMod
     {
         try
         {
-            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"grip={(_fingers ? "on" : "off")}" };
+            var lines = new List<string> { $"clothes={(_gameClothes ? "game" : "own")}", $"fillers.neck={(_neckFiller ? "on" : "off")}", $"fillers.arms={(_armFiller ? "on" : "off")}", $"female={(_female ? "on" : "off")}", $"play={_play ?? "off"}", $"prevrace={_prevRace}", $"wear={_wear ?? "off"}", $"armik={(_armIk ? "on" : "off")}", $"grip={(_fingers ? "on" : "off")}", $"self={(_selfOn ? "on" : "off")}" };
             foreach (var kv in HandOffsets)
                 lines.Add($"handoffset.{kv.Key}={kv.Value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}");
             foreach (var kv in HeadOffsets)
@@ -478,7 +494,7 @@ public class FemaleCharacter : SonsMod
 
     private static string DesiredOutfit(Entry entry)
     {
-        if (entry.Preview)
+        if (entry.Preview || entry.Self)
             return _wear ?? FromClothing(LocalFrame());
         if (entry.NetId == 0UL)
             entry.NetId = ModChat.IdOf(entry.Race);
@@ -525,6 +541,8 @@ public class FemaleCharacter : SonsMod
             var shader = mat && mat.shader ? mat.shader.name : string.Empty;
             if (shader.Contains("TextMesh") || shader.StartsWith("UI/") || shader.Contains("Sprite") || r.gameObject.layer == 5)
                 continue;
+            if (entry.Self && (r.shadowCastingMode == ShadowCastingMode.ShadowsOnly || !InSelfBody(entry, r.transform)))
+                continue;
             if (IsHeld(entry, r))
                 continue;
             entry.HiddenIds.Add(r.GetInstanceID());
@@ -532,6 +550,54 @@ public class FemaleCharacter : SonsMod
             entry.HiddenWasEnabled.Add(r.enabled);
             r.forceRenderingOff = true;
         }
+    }
+
+    private static bool InSelfBody(Entry entry, Transform t)
+    {
+        var race = entry.Frame.Find("RaceSystem");
+        var clothing = entry.Frame.Find("ClothingSystem");
+        var root = entry.Frame.Find("PlayerAnimator/Root");
+        return (race && t.IsChildOf(race)) || (clothing && t.IsChildOf(clothing)) || (root && t.IsChildOf(root));
+    }
+
+    private static void TickSelf()
+    {
+        if (Time.unscaledTime < _nextSelf)
+            return;
+        _nextSelf = Time.unscaledTime + 0.25f;
+        var race = LocalPlayer.RaceSystem;
+        var model = race ? CurrentModel() : null;
+        var want = _female && _selfOn && !_gameClothes && race && EnsureReady() && model != null && HasModel(model);
+        if (!want)
+        {
+            if (_self != null)
+            {
+                Remove(_self);
+                _self = null;
+            }
+            return;
+        }
+        if (_self == null || _self.Model != model || _self.Race != race || !_self.Female)
+        {
+            if (_self != null)
+                Remove(_self);
+            _self = Create(race, model, false);
+            if (_self == null)
+                return;
+            _self.Self = true;
+            var bones = BoneMap(_self.Female.transform);
+            if (bones.TryGetValue("Head", out var head))
+                _self.SelfHead = head;
+            RLog.Msg($"FemaleCharacter: first person as {model}");
+        }
+        var outfit = DesiredOutfit(_self);
+        if (outfit != _self.Outfit)
+            ApplyOutfit(_self, outfit);
+        foreach (var smr in _self.Female.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            if (smr && smr.gameObject.name.StartsWith("hair__") && !smr.forceRenderingOff)
+                smr.forceRenderingOff = true;
+        ReleaseHeld(_self);
+        HideNew(_self);
     }
 
     private static bool IsHeld(Entry entry, Renderer r)
@@ -711,6 +777,12 @@ public class FemaleCharacter : SonsMod
         foreach (var entry in Entries.Values)
             Remove(entry);
         Entries.Clear();
+        if (_self != null)
+        {
+            Remove(_self);
+            _self = null;
+        }
+        _nextSelf = 0f;
         string previewModel = null;
         if (_preview != null)
         {
@@ -1049,6 +1121,7 @@ public class FemaleCharacter : SonsMod
         {
             TickPlay();
             TickWear();
+            TickSelf();
         }
         catch (Exception e)
         {
@@ -1088,7 +1161,7 @@ public class FemaleCharacter : SonsMod
 
     private static void DriveAll()
     {
-        if (Entries.Count == 0 && _preview == null)
+        if (Entries.Count == 0 && _preview == null && _self == null)
             return;
         try
         {
@@ -1096,6 +1169,12 @@ public class FemaleCharacter : SonsMod
                 Drive(entry);
             if (_preview != null)
                 Drive(_preview);
+            if (_self != null)
+            {
+                Drive(_self);
+                if (_self.SelfHead)
+                    _self.SelfHead.localScale = Vector3.one * 0.0001f;
+            }
         }
         catch (Exception e)
         {
@@ -2484,6 +2563,8 @@ public class FemaleCharacter : SonsMod
         public string Outfit;
         public ulong NetId;
         public bool Preview;
+        public bool Self;
+        public Transform SelfHead;
         public bool ShowBackpack = true;
         public readonly List<GameObject> Owned = new();
         public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
