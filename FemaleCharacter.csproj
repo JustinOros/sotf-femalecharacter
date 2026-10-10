@@ -6,7 +6,7 @@
         <LangVersion>latest</LangVersion>
         <AssemblyName>FemaleCharacter</AssemblyName>
         <RootNamespace>FemaleCharacter</RootNamespace>
-        <Version>1.4.17</Version>
+        <Version>1.4.18</Version>
         <NoWarn>CS0436;CS1701;CS1702;MSB3277;MSB3106</NoWarn>
     </PropertyGroup>
 
