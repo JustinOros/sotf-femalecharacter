@@ -594,8 +594,16 @@ public class FemaleCharacter : SonsMod
             }
             _self.Self = true;
             var bones = BoneMap(_self.Female.transform);
-            if (bones.TryGetValue("Head", out var head))
-                _self.SelfHead = head;
+            if (bones.TryGetValue("Neck", out var neck))
+                _self.SelfHead = neck;
+            var frame = race.transform.parent ? race.transform.parent : race.transform;
+            _self.SelfNeckPlayer = FindDeep(frame, "Neck");
+            foreach (var r in _self.Female.GetComponentsInChildren<Renderer>(true))
+            {
+                var n = r ? r.gameObject.name.ToLowerInvariant() : string.Empty;
+                if (n.Contains("eye") || n.Contains("brow") || n.Contains("lash") || n.Contains("teeth") || n.Contains("tongue"))
+                    r.forceRenderingOff = true;
+            }
             RLog.Msg($"FemaleCharacter: first person as {model}");
         }
         var outfit = DesiredOutfit(_self);
@@ -2062,6 +2070,12 @@ public class FemaleCharacter : SonsMod
                 link.Female.rotation = link.Player.rotation * link.Offset;
         }
 
+        if (entry.Self && entry.SelfHead && entry.SelfNeckPlayer)
+        {
+            entry.SelfHead.localScale = Vector3.one;
+            entry.FemaleHips.position += entry.SelfNeckPlayer.position - entry.SelfHead.position;
+        }
+
         if (_armIk)
             foreach (var arm in entry.Arms)
                 SolveArm(arm);
@@ -2573,6 +2587,7 @@ public class FemaleCharacter : SonsMod
         public bool Preview;
         public bool Self;
         public Transform SelfHead;
+        public Transform SelfNeckPlayer;
         public bool ShowBackpack = true;
         public readonly List<GameObject> Owned = new();
         public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
