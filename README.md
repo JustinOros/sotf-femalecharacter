@@ -63,7 +63,7 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 
 ## Building
 
-1. Generate the women with `tools/build_woman.py` (Blender 4.2 or newer with the MakeHuman MPFB add-on and the MakeHuman asset packs). Each `tools/womanN.json` sets her body, skin and hair and names her outfit colors file (`tools/outfits_*.json`).
+1. Generate the women with `tools/build_woman.py` (Blender 4.2 or newer with the MakeHuman MPFB add-on and the MakeHuman asset packs). Each `tools/womanN.json` sets her body, skin and hair and names her outfit colors file (`tools/outfits_*.json`). The tactical vest comes from the MakeHuman Equipment 03 asset pack, which has to be installed too.
 2. Build the character bundle in Unity 2022.2.16f1 (the game's Unity version): open the project in `unity`, put `woman0.fbx` to `woman7.fbx` and the `textures` folder in `Assets/Models`, run FemaleCharacter > Build Bundle, and copy `Bundles/femalecharacter` to `assets/femalecharacter`.
 3. Build and install the mod:
 

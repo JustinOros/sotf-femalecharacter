@@ -23,21 +23,31 @@
  ],
  "tactical": [
   [
-   "elvs_emt_uniform_jacket_female",
+   "mindfront_tactical_vest_female",
    [
-    32,
-    35,
-    45
+    28,
+    28,
+    30
+   ],
+   0.004,
+   60
+  ],
+  [
+   "mindfront_knitted_sweater_01",
+   [
+    22,
+    22,
+    24
    ],
    0,
-   50
+   30
   ],
   [
    "cortu_cargo_pants",
    [
-    11,
-    11,
-    15
+    18,
+    18,
+    20
    ],
    0.006,
    20
@@ -45,9 +55,9 @@
   [
    "mindfront_shoes_biker_boots_female",
    [
-    37,
-    36,
-    45
+    20,
+    20,
+    22
    ],
    0.001,
    5

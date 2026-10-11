@@ -15,6 +15,8 @@ Clothing from the MakeHuman community asset packs:
 | elvs_racing_fire_suit_female1 | Elvaerwyn | CC-BY | http://www.makehumancommunity.org/node/2867 |
 | mindfront_f_one-piece_swimsuit_01 | Mindfront | CC-BY | http://www.makehumancommunity.org/node/331 |
 | mindfront_female_trousers_1 | Mindfront | CC-BY | http://www.makehumancommunity.org/node/790 |
+| mindfront_knitted_sweater_01 | Mindfront | CC-BY | MakeHuman community assets |
+| mindfront_tactical_vest_female | Mindfront | CC-BY | MakeHuman community asset pack equipment03_cc-by |
 | mindfront_shoes_biker_boots_female | Mindfront | CC-BY | http://www.makehumancommunity.org/node/623 |
 | punkduck_off-shoulder_long-sleeve_top | punkduck | CC-BY | MakeHuman community asset pack shirts02_ccby |
 | punkduck_wetsuit | punkduck | CC-BY | http://www.makehumancommunity.org/node/662 |

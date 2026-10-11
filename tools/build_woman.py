@@ -115,6 +115,29 @@ def fix_normals(obj):
     obj.data.update()
 
 
+AREA_MEDIAN = ("mindfront_tactical_vest_female",)
+
+
+def area_median(obj, lum, alpha, w, h):
+    from PIL import Image as PImage, ImageDraw
+    size = 512
+    mask = PImage.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    uvs = obj.data.uv_layers.active.data
+    for poly in obj.data.polygons:
+        pts = [((uvs[i].uv[0] % 1.0) * size, (uvs[i].uv[1] % 1.0) * size) for i in poly.loop_indices]
+        if len(pts) >= 3:
+            draw.polygon(pts, fill=255)
+    m = np.asarray(mask) > 0
+    ys = np.arange(size) * h // size
+    xs = np.arange(size) * w // size
+    l = lum[np.ix_(ys, xs)]
+    a = alpha[np.ix_(ys, xs)]
+    vals = l[m & (a > 0.5)]
+    print("AREA MEDIAN", obj.name, float(np.median(vals)) if vals.size else None)
+    return float(np.median(vals)) if vals.size else 0.3
+
+
 def recolor(obj, rgb, filename, flat=False):
     for n in base_nodes(obj):
         if filename in bpy.data.images:
@@ -127,6 +150,8 @@ def recolor(obj, rgb, filename, flat=False):
         samples = lum[np.clip((uv[:, 1] * h).astype(int), 0, h - 1), np.clip((uv[:, 0] * w).astype(int), 0, w - 1)]
         samples = samples[(samples > 0.001) & (samples < 0.9)]
         mean = float(np.median(samples)) if samples.size else 0.1
+        if any(k in obj.name for k in AREA_MEDIAN):
+            mean = area_median(obj, lum, px[..., 3], w, h)
         color = camo(w, h) if rgb == "camo" else np.array(rgb, dtype=np.float32) / 255.0
         if flat:
             px[..., :3] = np.clip(flatten(lum, px[..., 3], max(w, h) / 24)[..., None] * color, 0.0, 1.0)
@@ -241,6 +266,73 @@ def entry_layer(e):
     return int(e[3]) if len(e) > 3 and e[3] is not None else 30
 
 
+def strip_low_parts(obj, real, max_y, scale=None):
+    import bmesh, glob
+    from mathutils import Vector
+    objs = glob.glob(os.path.join(D, "clothes", real, "*.obj"))
+    if not objs:
+        return
+    v = []
+    faces = []
+    for line in open(objs[0]):
+        p = line.split()
+        if not p:
+            continue
+        if p[0] == "v":
+            v.append(float(p[2]))
+        elif p[0] == "f":
+            faces.append([int(x.split("/")[0]) - 1 for x in p[1:]])
+    if len(v) != len(obj.data.vertices):
+        print("STRIP skipped, vertex count differs", len(v), len(obj.data.vertices))
+        return
+    par = list(range(len(v)))
+
+    def find(a):
+        while par[a] != a:
+            par[a] = par[par[a]]
+            a = par[a]
+        return a
+    for f in faces:
+        for x in f[1:]:
+            par[find(x)] = find(f[0])
+    top = {}
+    for i, y in enumerate(v):
+        r = find(i)
+        top[r] = max(top.get(r, -1e9), y)
+    kill = [i for i in range(len(v)) if top[find(i)] < max_y]
+    if scale is not None:
+        xs = []
+        for line in open(objs[0]):
+            p = line.split()
+            if p and p[0] == "v":
+                xs.append(float(p[1]))
+        groups = {}
+        for i in kill:
+            x = xs[i]
+            groups.setdefault((x > 0, abs(x) > 1.15), []).append(i)
+        mw = obj.matrix_world
+        inv = mw.inverted()
+        for idx in groups.values():
+            pts = [mw @ obj.data.vertices[i].co for i in idx]
+            cx = sum(p.x for p in pts) / len(pts)
+            top_z = max(p.z for p in pts)
+            back_y = max(p.y for p in pts)
+            anchor = Vector((cx, back_y, top_z))
+            for i, p in zip(idx, pts):
+                obj.data.vertices[i].co = inv @ (anchor + (p - anchor) * scale)
+        obj.data.update()
+        print("SHRINK", obj.name, len(groups), "pouch groups to", scale)
+        return
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in kill], context="VERTS")
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    print("STRIP", obj.name, len(kill), "verts removed")
+
+
 piece_users = {}
 entry_key = {}
 for outfit, pieces in outfits.items():
@@ -261,7 +353,18 @@ key_object = {}
 for (asset, rgbjson, offset, context), users in piece_users.items():
     rgb = None if WEB else json.loads(rgbjson)
     before = set(g.name for g in basemesh.vertex_groups)
-    obj = add("Clothes", f"clothes/{asset}/{asset}.mhclo")
+    real = asset
+    pouch_scale = None
+    if asset.endswith("_nopouch"):
+        real = asset[:-len("_nopouch")]
+    elif "_pouch" in asset:
+        real, pct = asset.rsplit("_pouch", 1)
+        pouch_scale = int(pct) / 100.0
+    obj = add("Clothes", f"clothes/{real}/{real}.mhclo")
+    if asset.endswith("_nopouch"):
+        strip_low_parts(obj, real, 3.0)
+    elif pouch_scale is not None:
+        strip_low_parts(obj, real, 3.0, pouch_scale)
     created = set(g.name for g in basemesh.vertex_groups) - before
     group = "Delete." + asset.replace(" ", "_")
     for o in users:
