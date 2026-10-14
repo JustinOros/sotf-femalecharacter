@@ -4,14 +4,14 @@ A client side RedLoader mod for Sons of the Forest that shows players who have t
 
 | Race slot | Woman | Hair |
 |---|---|---|
-| White (0) | Woman0 | blonde |
+| White (0) | Woman0 | blonde hair |
 | Black (1) | Woman1 | black hair |
 | Latin (2) | Woman2 | black hair |
 | Asian (3) | Woman3 | black hair |
-| BlackA (4) | Woman4 | Asian, blonde |
+| BlackA (4) | Woman4 | blonde hair |
 | WhiteA (5) | Woman5 | black hair |
-| BlackB (6) | Woman6 | blonde |
-| LatinA (7) | Woman7 | blonde |
+| BlackB (6) | Woman6 | blonde hair |
+| LatinA (7) | Woman7 | blonde hair |
 
 Installing the mod is all you need. You are shown as the woman for your race slot, so pick the slot you want in the game or with [sotf-character-select](https://github.com/JustinOros/sotf-character-select). You can also switch with `femalecharacter woman2` and so on, or turn it off with `femalecharacter off`.
 
