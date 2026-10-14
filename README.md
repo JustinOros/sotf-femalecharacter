@@ -70,5 +70,3 @@ Hold one of Virginia's outfits (Camo Suit, Dress, Leather Suit, Tracksuit, Swims
 ```
 .\build.ps1 -Install
 ```
-
-Bundles built before the rename with `alyssa.fbx` and `rachel.fbx` still work as Woman2 and Woman6.
