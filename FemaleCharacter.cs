@@ -585,17 +585,20 @@ public class FemaleCharacter : SonsMod
 
     private static bool InSelfBody(Entry entry, Transform t)
     {
-        var race = entry.Frame.Find("RaceSystem");
-        var clothing = entry.Frame.Find("ClothingSystem");
-        var root = entry.Frame.Find("PlayerAnimator/Root");
-        return (race && t.IsChildOf(race)) || (clothing && t.IsChildOf(clothing)) || (root && t.IsChildOf(root));
+        if (!entry.SelfRaceRoot)
+        {
+            entry.SelfRaceRoot = entry.Frame.Find("RaceSystem");
+            entry.SelfClothingRoot = entry.Frame.Find("ClothingSystem");
+            entry.SelfAnimRoot = entry.Frame.Find("PlayerAnimator/Root");
+        }
+        return (entry.SelfRaceRoot && t.IsChildOf(entry.SelfRaceRoot)) || (entry.SelfClothingRoot && t.IsChildOf(entry.SelfClothingRoot)) || (entry.SelfAnimRoot && t.IsChildOf(entry.SelfAnimRoot));
     }
 
     private static void TickSelf()
     {
         if (Time.unscaledTime < _nextSelf)
             return;
-        _nextSelf = Time.unscaledTime + 0.25f;
+        _nextSelf = Time.unscaledTime + 0.5f;
         var race = LocalPlayer.RaceSystem;
         var model = race ? CurrentModel() : null;
         var want = _female && _selfOn && race && EnsureReady() && model != null && HasModel(model);
@@ -638,13 +641,23 @@ public class FemaleCharacter : SonsMod
             RLog.Msg($"FemaleCharacter: first person as {model}");
         }
         var outfit = DesiredOutfit(_self);
-        if (outfit != _self.Outfit)
+        if (outfit != _self.Outfit || !_self.SelfHairHidden)
+        {
             ApplyOutfit(_self, outfit);
-        foreach (var smr in _self.Female.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            if (smr && smr.gameObject.name.StartsWith("hair__") && !smr.forceRenderingOff)
-                smr.forceRenderingOff = true;
+            foreach (var smr in _self.Female.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                if (smr && smr.gameObject.name.StartsWith("hair__"))
+                    smr.forceRenderingOff = true;
+            _self.SelfHairHidden = true;
+        }
         ReleaseHeld(_self);
         HideNew(_self);
+    }
+
+    private static void Reassert(Entry entry)
+    {
+        foreach (var r in entry.Hidden)
+            if (r && !r.forceRenderingOff)
+                r.forceRenderingOff = true;
     }
 
     private static bool IsHeld(Entry entry, Renderer r)
@@ -1251,12 +1264,17 @@ public class FemaleCharacter : SonsMod
         }
         if (Time.unscaledTime >= _nextHide)
         {
-            _nextHide = Time.unscaledTime + 0.1f;
+            _nextHide = Time.unscaledTime + 0.25f;
             try
             {
                 foreach (var entry in Entries.Values)
                     if (!entry.GameClothes)
+                    {
                         HideNew(entry);
+                        Reassert(entry);
+                    }
+                if (_self != null)
+                    Reassert(_self);
             }
             catch (Exception e)
             {
@@ -1293,7 +1311,8 @@ public class FemaleCharacter : SonsMod
 
     private static void OnLateUpdate()
     {
-        DriveAll();
+        if (!_cameraHooked)
+            DriveAll();
     }
 
     private static void DriveAll()
@@ -2171,10 +2190,6 @@ public class FemaleCharacter : SonsMod
         if (!active)
             return;
 
-        foreach (var r in entry.Hidden)
-            if (r && !r.forceRenderingOff && !IsHeld(entry, r))
-                r.forceRenderingOff = true;
-
         var frameRotation = entry.Frame.rotation;
         if (entry.Mannequin != null)
         {
@@ -2755,6 +2770,10 @@ public class FemaleCharacter : SonsMod
         public bool Self;
         public Transform SelfHead;
         public Transform SelfNeckPlayer;
+        public Transform SelfRaceRoot;
+        public Transform SelfClothingRoot;
+        public Transform SelfAnimRoot;
+        public bool SelfHairHidden;
         public bool ShowBackpack = true;
         public readonly List<GameObject> Owned = new();
         public readonly List<SkinnedMeshRenderer> FillerRenderers = new();
