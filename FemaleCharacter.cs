@@ -113,6 +113,17 @@ public class FemaleCharacter : SonsMod
         }
         try
         {
+            _willRenderCanvases = DelegateSupport.ConvertDelegate<Canvas.WillRenderCanvases>(new Action(OnWillRenderCanvases));
+            Canvas.add_willRenderCanvases(_willRenderCanvases);
+            _canvasHooked = true;
+            RLog.Msg("FemaleCharacter: hooked canvas update, posing right before skinning");
+        }
+        catch (Exception e)
+        {
+            RLog.Warning($"FemaleCharacter: could not hook canvas update: {e.Message}");
+        }
+        try
+        {
             _beginCamera = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<ScriptableRenderContext, Camera>>(new Action<ScriptableRenderContext, Camera>(OnBeginCamera));
             RenderPipelineManager.add_beginCameraRendering(_beginCamera);
             _cameraHooked = true;
@@ -1299,19 +1310,57 @@ public class FemaleCharacter : SonsMod
     private static bool _cameraHooked;
     private static bool _fromCamera;
 
-    private static void OnBeginCamera(ScriptableRenderContext context, Camera camera)
+    private static int _lastSelfDrive = -1;
+    private static Canvas.WillRenderCanvases _willRenderCanvases;
+    private static bool _canvasHooked;
+
+    private static void OnWillRenderCanvases()
     {
-        if (_lastCameraDrive == Time.frameCount)
-            return;
         _lastCameraDrive = Time.frameCount;
+        _lastSelfDrive = Time.frameCount;
         _fromCamera = true;
         DriveAll();
         _fromCamera = false;
     }
 
+    private static void OnBeginCamera(ScriptableRenderContext context, Camera camera)
+    {
+        if (_canvasHooked)
+            return;
+        var main = camera && camera == Camera.main;
+        if (_lastCameraDrive != Time.frameCount)
+        {
+            _lastCameraDrive = Time.frameCount;
+            _fromCamera = true;
+            DriveAll();
+            _fromCamera = false;
+            if (main)
+                _lastSelfDrive = Time.frameCount;
+            return;
+        }
+        if (!main || _lastSelfDrive == Time.frameCount || _self == null)
+            return;
+        _lastSelfDrive = Time.frameCount;
+        try
+        {
+            Drive(_self);
+            if (_self.SelfHead)
+                _self.SelfHead.localScale = Vector3.one * 0.0001f;
+        }
+        catch (Exception e)
+        {
+            RLog.Error($"FemaleCharacter drive failed: {e.Message}");
+        }
+    }
+
     private static void OnLateUpdate()
     {
-        if (!_cameraHooked)
+        if (_canvasHooked && Time.frameCount > 300 && Time.frameCount - _lastCameraDrive > 30)
+        {
+            _canvasHooked = false;
+            RLog.Warning("FemaleCharacter: canvas update not firing, using camera rendering");
+        }
+        if (!_cameraHooked && !_canvasHooked)
             DriveAll();
     }
 
